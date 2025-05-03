@@ -7,19 +7,21 @@ const { Resend } = require('resend');
 const app = express();
 const port = process.env.PORT || 3001;
 
+// Allow CORS and parse JSON
 app.use(cors());
 app.use(express.json());
+app.use(express.raw({ type: 'application/json' })); // Needed for Stripe webhook raw body
 
-// Carsimulcast API
+// Carsimulcast API credentials
 const API_KEY = 'YCGRDKUUHZTSPYMKDUJVZYUOCRFVMG';
 const API_SECRET = 'o83nlvtcpwy4ajae0i17d399xgheb5iwrmzd68bm';
 
-// Resend Email API
-const resend = new Resend('re_JB6sgksF_26Fr5uVVSq7zYzVKG3mKWPPZ');
+// Resend email service
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-// Root route
+// Test route
 app.get('/', (req, res) => {
-  res.send('Autovyn backend running.');
+  res.send('Autovyn backend is running.');
 });
 
 // VIN lookup route
@@ -57,17 +59,17 @@ app.get('/vehicle-info/:vin', async (req, res) => {
   }
 });
 
-// Stripe webhook
-app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+// Stripe webhook route
+app.post('/webhook', async (req, res) => {
   const sig = req.headers['stripe-signature'];
 
   let event;
 
   try {
-    event = stripe.webhooks.constructEvent(req.body, sig, 'YOUR_STRIPE_WEBHOOK_SECRET'); // Replace this with your webhook secret
+    event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     console.log('Webhook verification failed.', err.message);
-    return res.sendStatus(400);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
   if (event.type === 'checkout.session.completed') {
@@ -79,7 +81,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     console.log(`Payment received. VIN: ${vin}, Email: ${customerEmail}`);
 
     try {
-      // Pull CarFax report
+      // Get CarFax report from Carsimulcast
       const reportResponse = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
         headers: {
           "API-KEY": API_KEY,
@@ -89,7 +91,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
       const reportBase64 = reportResponse.data;
 
-      // Convert to PDF
+      // Convert CarFax report to PDF
       const pdfResponse = await axios.post(`https://connect.carsimulcast.com/pdf/`, {
         base64_content: reportBase64,
         vin: vin,
@@ -103,13 +105,12 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
       const pdfBase64 = pdfResponse.data;
 
-      // Send email
+      // Send email with PDF attachment
       await resend.emails.send({
         from: 'Autovyn <onboarding@resend.dev>',
         to: customerEmail,
         subject: `Your Autovyn Report: ${vin}`,
-        html: `<p>Thank you for your purchase. Your vehicle report is attached.</p>
-               <p><strong>VIN:</strong> ${vin}</p>`,
+        html: `<p>Thank you for your purchase. Your vehicle report is attached.</p><p><strong>VIN:</strong> ${vin}</p>`,
         attachments: [
           {
             filename: `${vin}-carfax-report.pdf`,
@@ -121,13 +122,14 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       console.log(`Report sent to ${customerEmail}`);
 
     } catch (error) {
-      console.error('Error during report process:', error.message);
+      console.error('Error while processing report:', error.message);
     }
   }
 
   res.status(200).send('Webhook received');
 });
 
+// Start the server
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
