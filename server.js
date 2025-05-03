@@ -14,7 +14,7 @@ app.use(cors({
     allowedHeaders: ["Content-Type"]
 }));
 
-// For normal API routes (vehicle info)
+// For normal routes (vehicle info, create checkout session)
 app.use(express.json());
 
 // Carsimulcast API credentials
@@ -65,7 +65,42 @@ app.get('/vehicle-info/:vin', async (req, res) => {
   }
 });
 
-// Stripe webhook route (ONLY raw here)
+// Create Checkout Session
+app.post('/create-checkout-session', async (req, res) => {
+    const { vin, email } = req.body;
+
+    try {
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ['card'],
+            mode: 'payment',
+            line_items: [
+                {
+                    price_data: {
+                        currency: 'usd',
+                        product_data: {
+                            name: `Autovyn Report for VIN: ${vin}`,
+                        },
+                        unit_amount: 2500,
+                    },
+                    quantity: 1,
+                },
+            ],
+            metadata: {
+                vin: vin,
+                email: email
+            },
+            success_url: 'https://autvyn.vercel.app/success',
+            cancel_url: 'https://autvyn.vercel.app/cancel',
+        });
+
+        res.json({ url: session.url });
+    } catch (error) {
+        console.error('Error creating checkout session:', error.message);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+// Stripe webhook route (RAW for validation)
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
 
@@ -80,14 +115,12 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object;
-
-    const customerEmail = session.customer_details.email;
     const vin = session.metadata.vin;
+    const customerEmail = session.metadata.email;
 
     console.log(`Payment received. VIN: ${vin}, Email: ${customerEmail}`);
 
     try {
-      // Get CarFax report from Carsimulcast
       const reportResponse = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
         headers: {
           "API-KEY": API_KEY,
@@ -97,7 +130,6 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
       const reportBase64 = reportResponse.data;
 
-      // Convert CarFax report to PDF
       const pdfResponse = await axios.post(`https://connect.carsimulcast.com/pdf/`, {
         base64_content: reportBase64,
         vin: vin,
@@ -111,7 +143,6 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
       const pdfBase64 = pdfResponse.data;
 
-      // Send email with PDF attachment
       await resend.emails.send({
         from: 'Autovyn <onboarding@resend.dev>',
         to: customerEmail,
@@ -135,7 +166,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
   res.status(200).send('Webhook received');
 });
 
-// Start the server
+// Start server
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
