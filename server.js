@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
-const stripe = require('stripe')('YOUR_STRIPE_SECRET_KEY'); // REPLACE with your Stripe Secret Key
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { Resend } = require('resend');
 
 const app = express();
