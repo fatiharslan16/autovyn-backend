@@ -14,7 +14,7 @@ const API_SECRET = 'o83nlvtcpwy4ajae0i17d399xgheb5iwrmzd68bm';
 // Resend email service
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-//  WEBHOOK MUST BE BEFORE express.json
+// ✅ WEBHOOK FIRST
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
 
@@ -35,7 +35,22 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         console.log(`Payment received. VIN: ${vin}, Email: ${customerEmail}`);
 
         try {
-            // Get CarFax report from Carsimulcast
+            // ✅ STEP 1: Always pull fresh records
+            const recordsResponse = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
+                headers: {
+                    "API-KEY": API_KEY,
+                    "API-SECRET": API_SECRET,
+                },
+            });
+
+            const records = recordsResponse.data;
+
+            if (!records.carfax_available) {
+                console.log('Carfax report not available yet');
+                return res.status(200).send("Carfax report not available yet");
+            }
+
+            // ✅ STEP 2: Pull Carfax report fresh
             const reportResponse = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
                 headers: {
                     "API-KEY": API_KEY,
@@ -45,7 +60,13 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
             const reportBase64 = reportResponse.data;
 
-            // Convert CarFax report to PDF
+            // ✅ STEP 3: Validate report base64
+            if (!reportBase64 || reportBase64.length < 1000) {
+                console.error('Invalid or empty report received.');
+                return res.status(200).send("Report is still generating. Will email when ready.");
+            }
+
+            // ✅ STEP 4: Convert report to PDF
             const pdfResponse = await axios.post(`https://connect.carsimulcast.com/pdf/`, {
                 base64_content: reportBase64,
                 vin: vin,
@@ -58,11 +79,9 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             });
 
             const pdfBase64 = pdfResponse.data;
-
-            //  FIX → Convert to Buffer before email
             const pdfBuffer = Buffer.from(pdfBase64, 'base64');
 
-            // Send email with PDF attachment
+            // ✅ STEP 5: Send email with PDF
             await resend.emails.send({
                 from: 'Autovyn <onboarding@resend.dev>',
                 to: customerEmail,
@@ -71,7 +90,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 attachments: [
                     {
                         filename: `${vin}-carfax-report.pdf`,
-                        content: pdfBuffer, //  fixed here
+                        content: pdfBuffer,
                     },
                 ],
             });
@@ -86,7 +105,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     res.status(200).send('Webhook received');
 });
 
-//  AFTER webhook → normal middleware
+// ✅ AFTER WEBHOOK → normal middleware
 app.use(cors({
     origin: ["https://autvyn.vercel.app", "https://autovyn.net"],
     methods: ["GET", "POST"],
@@ -151,7 +170,7 @@ app.post('/create-checkout-session', async (req, res) => {
                         product_data: {
                             name: `Autovyn Report for VIN: ${vin}`,
                         },
-                        unit_amount: 299, //
+                        unit_amount: 299, // $2.99 fixed
                     },
                     quantity: 1,
                 },
@@ -171,7 +190,7 @@ app.post('/create-checkout-session', async (req, res) => {
     }
 });
 
-// Start the server
+// Start server
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
