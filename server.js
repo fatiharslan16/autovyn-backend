@@ -7,15 +7,15 @@ const { Resend } = require('resend');
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Allow CORS for your frontend
+// Allow CORS
 app.use(cors({
     origin: ["https://autvyn.vercel.app", "https://autovyn.net"],
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"]
 }));
 
+// For normal API routes (vehicle info)
 app.use(express.json());
-app.use(express.raw({ type: 'application/json' })); // Needed for Stripe webhook raw body
 
 // Carsimulcast API credentials
 const API_KEY = 'YCGRDKUUHZTSPYMKDUJVZYUOCRFVMG';
@@ -46,21 +46,18 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     const data = response.data;
     console.log("Carsimulcast Response:", data);
 
-    if (data && (data.vehicle || data.make || data.model || data.year)) {
-    res.json({
+    if (data && data.vehicle) {
+      res.json({
         success: true,
         vin: vin,
-        vehicle: data.vehicle || '',
-        make: data.make || '',
-        model: data.model || '',
-        year: data.year || ''
-    });
-} else {
-    res.json({
+        vehicle: data.vehicle
+      });
+    } else {
+      res.json({
         success: false,
         message: "VIN not found or no vehicle information available."
-    });
-}
+      });
+    }
 
   } catch (error) {
     console.error("Carsimulcast Error:", error.response ? error.response.data : error.message);
@@ -68,8 +65,8 @@ app.get('/vehicle-info/:vin', async (req, res) => {
   }
 });
 
-// Stripe webhook route
-app.post('/webhook', async (req, res) => {
+// Stripe webhook route (ONLY raw here)
+app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
 
   let event;
