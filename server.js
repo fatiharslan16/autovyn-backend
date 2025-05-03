@@ -38,13 +38,13 @@ app.get('/vehicle-info/:vin', async (req, res) => {
 
     const data = response.data;
 
-    if (data.make && data.model && data.year) {
+    if (data && Object.keys(data).length > 0) {
       res.json({
         success: true,
         vin: vin,
-        make: data.make,
-        model: data.model,
-        year: data.year
+        make: data.make || '',
+        model: data.model || '',
+        year: data.year || ''
       });
     } else {
       res.json({
