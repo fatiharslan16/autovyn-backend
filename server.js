@@ -3,6 +3,8 @@ const axios = require('axios');
 const cors = require('cors');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { Resend } = require('resend');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -13,6 +15,12 @@ const API_SECRET = 'o83nlvtcpwy4ajae0i17d399xgheb5iwrmzd68bm';
 
 // Resend email service
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Make reports folder if doesn't exist
+const reportsDir = path.join(__dirname, 'reports');
+if (!fs.existsSync(reportsDir)) {
+    fs.mkdirSync(reportsDir);
+}
 
 // ✅ WEBHOOK FIRST
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -35,7 +43,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         console.log(`Payment received. VIN: ${vin}, Email: ${customerEmail}`);
 
         try {
-            // ✅ STEP 1: Always pull fresh records
+            // Step 1: Pull fresh records
             const recordsResponse = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
                 headers: {
                     "API-KEY": API_KEY,
@@ -50,7 +58,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 return res.status(200).send("Carfax report not available yet");
             }
 
-            // ✅ STEP 2: Pull Carfax report fresh
+            // Step 2: Pull Carfax report
             const reportResponse = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
                 headers: {
                     "API-KEY": API_KEY,
@@ -60,13 +68,12 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
             const reportBase64 = reportResponse.data;
 
-            // ✅ STEP 3: Validate report base64
             if (!reportBase64 || reportBase64.length < 1000) {
                 console.error('Invalid or empty report received.');
                 return res.status(200).send("Report is still generating. Will email when ready.");
             }
 
-            // ✅ STEP 4: Convert report to PDF
+            // Step 3: Convert to PDF
             const pdfResponse = await axios.post(`https://connect.carsimulcast.com/pdf/`, {
                 base64_content: reportBase64,
                 vin: vin,
@@ -78,15 +85,21 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 },
             });
 
-            const pdfBase64 = pdfResponse.data;
-            const pdfBuffer = Buffer.from(pdfBase64, 'base64');
+            const rawPdfBase64 = pdfResponse.data;
+            const cleanedPdfBase64 = rawPdfBase64.replace(/(\r\n|\n|\r)/gm, "").trim();
+            const pdfBuffer = Buffer.from(cleanedPdfBase64, 'base64');
 
-            // ✅ STEP 5: Send email with PDF
+            // ✅ SAVE PDF
+            const filePath = path.join(reportsDir, `${vin}.pdf`);
+            fs.writeFileSync(filePath, pdfBuffer);
+            console.log(`PDF saved: ${filePath}`);
+
+            // ✅ SEND email (optional)
             await resend.emails.send({
                 from: 'Autovyn <onboarding@resend.dev>',
                 to: customerEmail,
                 subject: `Your Autovyn Report: ${vin}`,
-                html: `<p>Thank you for your purchase. Your vehicle report is attached.</p><p><strong>VIN:</strong> ${vin}</p>`,
+                html: `<p>Thank you for your purchase. You can also download your report <a href="https://autovyn-backend.onrender.com/report/${vin}">here</a>.</p>`,
                 attachments: [
                     {
                         filename: `${vin}-carfax-report.pdf`,
@@ -105,7 +118,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     res.status(200).send('Webhook received');
 });
 
-// ✅ AFTER WEBHOOK → normal middleware
+// ✅ AFTER WEBHOOK
 app.use(cors({
     origin: ["https://autvyn.vercel.app", "https://autovyn.net"],
     methods: ["GET", "POST"],
@@ -114,12 +127,12 @@ app.use(cors({
 
 app.use(express.json());
 
-// Test route
+// Home test route
 app.get('/', (req, res) => {
     res.send('Autovyn backend is running.');
 });
 
-// VIN lookup route
+// VIN lookup
 app.get('/vehicle-info/:vin', async (req, res) => {
     const vin = req.params.vin;
 
@@ -134,7 +147,6 @@ app.get('/vehicle-info/:vin', async (req, res) => {
         });
 
         const data = response.data;
-        console.log("Carsimulcast Response:", data);
 
         if (data && data.vehicle) {
             res.json({
@@ -150,12 +162,25 @@ app.get('/vehicle-info/:vin', async (req, res) => {
         }
 
     } catch (error) {
-        console.error("Carsimulcast Error:", error.response ? error.response.data : error.message);
         res.status(500).json({ success: false, message: 'Error fetching vehicle info.' });
     }
 });
 
-// Checkout session route
+// ✅ SERVE PDF file
+app.get('/report/:vin', (req, res) => {
+    const vin = req.params.vin;
+    const filePath = path.join(reportsDir, `${vin}.pdf`);
+
+    if (fs.existsSync(filePath)) {
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${vin}-report.pdf"`);
+        fs.createReadStream(filePath).pipe(res);
+    } else {
+        res.status(404).send("Report not found yet. Please try again later.");
+    }
+});
+
+// Create checkout session
 app.post('/create-checkout-session', async (req, res) => {
     const { vin, email } = req.body;
 
@@ -170,7 +195,7 @@ app.post('/create-checkout-session', async (req, res) => {
                         product_data: {
                             name: `Autovyn Report for VIN: ${vin}`,
                         },
-                        unit_amount: 299, // $2.99 fixed
+                        unit_amount: 299,
                     },
                     quantity: 1,
                 },
@@ -179,13 +204,12 @@ app.post('/create-checkout-session', async (req, res) => {
                 vin: vin,
                 email: email
             },
-            success_url: 'https://autovyn.net/?status=success',
+            success_url: `https://autovyn.net/report.html?vin=${vin}`,
             cancel_url: 'https://autovyn.net/?status=cancel',
         });
 
         res.json({ url: session.url });
     } catch (error) {
-        console.error('Error creating checkout session:', error.message);
         res.status(500).send('Internal Server Error');
     }
 });
