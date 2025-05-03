@@ -46,20 +46,21 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     const data = response.data;
     console.log("Carsimulcast Response:", data);
 
-    if (data && (data.make || data.model || data.year)) {
-      res.json({
+    if (data && (data.vehicle || data.make || data.model || data.year)) {
+    res.json({
         success: true,
         vin: vin,
+        vehicle: data.vehicle || '',
         make: data.make || '',
         model: data.model || '',
         year: data.year || ''
-      });
-    } else {
-      res.json({
+    });
+} else {
+    res.json({
         success: false,
         message: "VIN not found or no vehicle information available."
-      });
-    }
+    });
+}
 
   } catch (error) {
     console.error("Carsimulcast Error:", error.response ? error.response.data : error.message);
