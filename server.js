@@ -148,7 +148,7 @@ app.post('/create-checkout-session', async (req, res) => {
                         product_data: {
                             name: `Autovyn Report for VIN: ${vin}`,
                         },
-                        unit_amount: 2500,
+                        unit_amount: 299,
                     },
                     quantity: 1,
                 },
