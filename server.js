@@ -7,8 +7,13 @@ const { Resend } = require('resend');
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Allow CORS and parse JSON
-app.use(cors());
+// Allow CORS for your frontend
+app.use(cors({
+    origin: ["https://autvyn.vercel.app", "https://autovyn.net"],
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type"]
+}));
+
 app.use(express.json());
 app.use(express.raw({ type: 'application/json' })); // Needed for Stripe webhook raw body
 
@@ -28,6 +33,8 @@ app.get('/', (req, res) => {
 app.get('/vehicle-info/:vin', async (req, res) => {
   const vin = req.params.vin;
 
+  console.log("Received VIN request:", vin);
+
   try {
     const response = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
       headers: {
@@ -37,8 +44,9 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     });
 
     const data = response.data;
+    console.log("Carsimulcast Response:", data);
 
-    if (data && Object.keys(data).length > 0) {
+    if (data && (data.make || data.model || data.year)) {
       res.json({
         success: true,
         vin: vin,
@@ -54,7 +62,7 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     }
 
   } catch (error) {
-    console.error(error.response ? error.response.data : error.message);
+    console.error("Carsimulcast Error:", error.response ? error.response.data : error.message);
     res.status(500).json({ success: false, message: 'Error fetching vehicle info.' });
   }
 });
