@@ -8,11 +8,16 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// API credentials from Carsimulcast (keep these safe!)
+// Carsimulcast API credentials
 const API_KEY = 'YCGRDKUUHZTSPYMKDUJVZYUOCRFVMG';
 const API_SECRET = 'o83nlvtcpwy4ajae0i17d399xgheb5iwrmzd68bm';
 
-// Endpoint to get vehicle info
+// Test route for root
+app.get('/', (req, res) => {
+  res.send('Autovyn backend running!');
+});
+
+// Vehicle info route
 app.get('/vehicle-info/:vin', async (req, res) => {
   const vin = req.params.vin;
 
@@ -26,22 +31,29 @@ app.get('/vehicle-info/:vin', async (req, res) => {
 
     const data = response.data;
 
-    // Return only basic info to frontend
-    res.json({
-      success: true,
-      make: data.make,
-      model: data.model,
-      year: data.year,
-      vin: data.vin,
-    });
+    // Check if make, model, year exists
+    if (data.make && data.model && data.year) {
+      res.json({
+        success: true,
+        vin: vin,
+        make: data.make,
+        model: data.model,
+        year: data.year
+      });
+    } else {
+      // No vehicle data → invalid VIN or not found
+      res.json({
+        success: false,
+        message: "VIN not found or no vehicle information available."
+      });
+    }
 
   } catch (error) {
     console.error(error.response ? error.response.data : error.message);
-    res.status(500).json({ success: false, message: 'Error fetching vehicle info.' });
+    res.status(500).json({ success: false, message: 'Server error fetching vehicle info.' });
   }
 });
 
-// Start the server
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
