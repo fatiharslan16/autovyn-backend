@@ -14,7 +14,7 @@ app.use(cors({
     allowedHeaders: ["Content-Type"]
 }));
 
-// For normal routes (vehicle info, create checkout session)
+// For normal routes
 app.use(express.json());
 
 // Carsimulcast API credentials
@@ -80,7 +80,7 @@ app.post('/create-checkout-session', async (req, res) => {
                         product_data: {
                             name: `Autovyn Report for VIN: ${vin}`,
                         },
-                        unit_amount: 300,
+                        unit_amount: 2500,
                     },
                     quantity: 1,
                 },
@@ -89,8 +89,8 @@ app.post('/create-checkout-session', async (req, res) => {
                 vin: vin,
                 email: email
             },
-            success_url: 'https://autvyn.vercel.app/success',
-            cancel_url: 'https://autvyn.vercel.app/cancel',
+            success_url: 'https://autovyn.net/?status=success',
+            cancel_url: 'https://autovyn.net/?status=cancel',
         });
 
         res.json({ url: session.url });
@@ -100,7 +100,7 @@ app.post('/create-checkout-session', async (req, res) => {
     }
 });
 
-// Stripe webhook route (RAW for validation)
+// Stripe webhook route (RAW BODY → FIXED ✅)
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   const sig = req.headers['stripe-signature'];
 
