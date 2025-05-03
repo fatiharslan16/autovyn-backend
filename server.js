@@ -14,7 +14,7 @@ const API_SECRET = 'o83nlvtcpwy4ajae0i17d399xgheb5iwrmzd68bm';
 // Resend email service
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ✅✅✅ WEBHOOK route MUST come BEFORE express.json
+//  WEBHOOK MUST BE BEFORE express.json
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
 
@@ -59,6 +59,9 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
             const pdfBase64 = pdfResponse.data;
 
+            //  FIX → Convert to Buffer before email
+            const pdfBuffer = Buffer.from(pdfBase64, 'base64');
+
             // Send email with PDF attachment
             await resend.emails.send({
                 from: 'Autovyn <onboarding@resend.dev>',
@@ -68,7 +71,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 attachments: [
                     {
                         filename: `${vin}-carfax-report.pdf`,
-                        content: pdfBase64,
+                        content: pdfBuffer, //  fixed here
                     },
                 ],
             });
@@ -83,7 +86,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     res.status(200).send('Webhook received');
 });
 
-// ✅ ✅ ✅ After webhook → now normal middlewares
+//  AFTER webhook → normal middleware
 app.use(cors({
     origin: ["https://autvyn.vercel.app", "https://autovyn.net"],
     methods: ["GET", "POST"],
@@ -92,7 +95,7 @@ app.use(cors({
 
 app.use(express.json());
 
-// Home test route
+// Test route
 app.get('/', (req, res) => {
     res.send('Autovyn backend is running.');
 });
@@ -133,7 +136,7 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     }
 });
 
-// Create Checkout Session
+// Checkout session route
 app.post('/create-checkout-session', async (req, res) => {
     const { vin, email } = req.body;
 
@@ -148,7 +151,7 @@ app.post('/create-checkout-session', async (req, res) => {
                         product_data: {
                             name: `Autovyn Report for VIN: ${vin}`,
                         },
-                        unit_amount: 299,
+                        unit_amount: 299, //
                     },
                     quantity: 1,
                 },
@@ -168,7 +171,7 @@ app.post('/create-checkout-session', async (req, res) => {
     }
 });
 
-// Start server
+// Start the server
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
