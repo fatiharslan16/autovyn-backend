@@ -16,13 +16,13 @@ const API_SECRET = 'o83nlvtcpwy4ajae0i17d399xgheb5iwrmzd68bm';
 // Resend email service
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// Make reports folder if doesn't exist
+// Make reports folder if not exist
 const reportsDir = path.join(__dirname, 'reports');
 if (!fs.existsSync(reportsDir)) {
     fs.mkdirSync(reportsDir);
 }
 
-// ✅ WEBHOOK FIRST
+// ✅ Webhook - important for Stripe payments
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
 
@@ -43,7 +43,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         console.log(`Payment received. VIN: ${vin}, Email: ${customerEmail}`);
 
         try {
-            // Step 1: Pull fresh records
+            // Step 1: Pull records
             const recordsResponse = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
                 headers: {
                     "API-KEY": API_KEY,
@@ -94,7 +94,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             fs.writeFileSync(filePath, pdfBuffer);
             console.log(`PDF saved: ${filePath}`);
 
-            // ✅ SEND email
+            // ✅ Send email
             await resend.emails.send({
                 from: 'Autovyn <onboarding@resend.dev>',
                 to: customerEmail,
@@ -118,20 +118,16 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     res.status(200).send('Webhook received');
 });
 
-// ✅ AFTER WEBHOOK
+// ✅ CORS setup (Only autovyn-frontend.vercel.app now)
 app.use(cors({
-    origin: [
-        "https://autvyn.vercel.app",
-        "https://autovyn.net",
-        "https://autvyn-fatih-arslans-projects.vercel.app"
-    ],
+    origin: ["https://autovyn-frontend.vercel.app"],
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"]
 }));
 
 app.use(express.json());
 
-// Home test route
+// Home
 app.get('/', (req, res) => {
     res.send('Autovyn backend is running.');
 });
@@ -139,7 +135,6 @@ app.get('/', (req, res) => {
 // VIN lookup
 app.get('/vehicle-info/:vin', async (req, res) => {
     const vin = req.params.vin;
-
     console.log("Received VIN request:", vin);
 
     try {
@@ -170,7 +165,7 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     }
 });
 
-// ✅ SERVE PDF file
+// ✅ Serve PDF report
 app.get('/report/:vin', (req, res) => {
     const vin = req.params.vin;
     const filePath = path.join(reportsDir, `${vin}.pdf`);
@@ -184,11 +179,9 @@ app.get('/report/:vin', (req, res) => {
     }
 });
 
-// Create checkout session
+// ✅ Stripe Checkout Session
 app.post('/create-checkout-session', async (req, res) => {
     const { vin, email } = req.body;
-
-    console.log("Creating checkout session for VIN:", vin, "Email:", email);
 
     try {
         const session = await stripe.checkout.sessions.create({
@@ -201,7 +194,7 @@ app.post('/create-checkout-session', async (req, res) => {
                         product_data: {
                             name: `Autovyn Report for VIN: ${vin}`,
                         },
-                        unit_amount: 299,
+                        unit_amount: 299, // $2.99
                     },
                     quantity: 1,
                 },
@@ -210,8 +203,8 @@ app.post('/create-checkout-session', async (req, res) => {
                 vin: vin,
                 email: email
             },
-            success_url: `https://autovyn.net/report.html?vin=${vin}`,
-            cancel_url: 'https://autovyn.net/?status=cancel',
+            success_url: `https://autovyn-frontend.vercel.app/report.html?vin=${vin}`,
+            cancel_url: 'https://autovyn-frontend.vercel.app/?status=cancel',
         });
 
         res.json({ url: session.url });
