@@ -94,7 +94,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             fs.writeFileSync(filePath, pdfBuffer);
             console.log(`PDF saved: ${filePath}`);
 
-            // ✅ SEND email (optional)
+            // ✅ SEND email
             await resend.emails.send({
                 from: 'Autovyn <onboarding@resend.dev>',
                 to: customerEmail,
@@ -120,7 +120,11 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
 // ✅ AFTER WEBHOOK
 app.use(cors({
-    origin: ["https://autvyn.vercel.app", "https://autovyn.net"],
+    origin: [
+        "https://autvyn.vercel.app",
+        "https://autovyn.net",
+        "https://autvyn-fatih-arslans-projects.vercel.app"
+    ],
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"]
 }));
@@ -183,6 +187,8 @@ app.get('/report/:vin', (req, res) => {
 // Create checkout session
 app.post('/create-checkout-session', async (req, res) => {
     const { vin, email } = req.body;
+
+    console.log("Creating checkout session for VIN:", vin, "Email:", email);
 
     try {
         const session = await stripe.checkout.sessions.create({
