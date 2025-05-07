@@ -64,12 +64,11 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 from: 'Autovyn <onboarding@resend.dev>',
                 to: customerEmail,
                 subject: `Your Autovyn Report for ${vehicleInfo} (VIN: ${vin})`,
-                html: `<p>Thank you for your purchase.</p>
-                       <p><strong>Vehicle:</strong> ${vehicleInfo} (VIN: ${vin})</p>
-                       <p>Your Carfax report is ready: <a href="${carfaxLink}" target="_blank">View Report</a></p>`,
+                html: `<p>Your report is ready. Click the link below to view or download it:</p>
+                       <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${customerEmail}" target="_blank">Download Your Report</a></p>`,
             });
 
-            console.log(`Report link sent to ${customerEmail}`);
+            console.log(`Report link email sent to ${customerEmail}`);
 
         } catch (error) {
             console.error('Error while processing report:', error.message);
@@ -127,7 +126,7 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     }
 });
 
-// ✅ Report with email sending
+// ✅ Report with email sending (simple link version)
 app.get('/report/:vin', async (req, res) => {
     const vin = req.params.vin;
     const email = req.query.email;
@@ -148,7 +147,8 @@ app.get('/report/:vin', async (req, res) => {
                     from: 'Autovyn <onboarding@resend.dev>',
                     to: email,
                     subject: `Your Autovyn Report (VIN: ${vin})`,
-                    html: `<p>Your Carfax report is ready: <a href="${data.carfax_link}" target="_blank">View Report</a></p>`,
+                    html: `<p>Your report is ready. Click the link below to view or download it:</p>
+                           <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${email}" target="_blank">Download Your Report</a></p>`,
                 });
                 console.log(`Carfax link email sent to ${email}`);
             }
@@ -167,22 +167,19 @@ app.get('/report/:vin', async (req, res) => {
 
         if (reportContent && reportContent !== "No record found") {
 
-            const decodedReport = Buffer.from(reportContent, 'base64').toString('utf-8');
-
             if (email) {
                 await resend.emails.send({
                     from: 'Autovyn <onboarding@resend.dev>',
                     to: email,
                     subject: `Your Autovyn Report (VIN: ${vin})`,
-                    html: `<p>Your Carfax report is ready. Please find the report below:</p>
-                           ${decodedReport}
-                           <p>You can also <a href="https://autovyn.net/report.html?vin=${vin}&email=${email}" target="_blank">view/download from website</a>.</p>`,
+                    html: `<p>Your report is ready. Click the link below to view or download it:</p>
+                           <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${email}" target="_blank">Download Your Report</a></p>`,
                 });
-                console.log(`HTML Report email sent to ${email}`);
+                console.log(`HTML Report email link sent to ${email}`);
             }
 
             res.setHeader("Content-Type", "text/html");
-            return res.send(decodedReport);
+            return res.send(Buffer.from(reportContent, 'base64').toString('utf-8'));
         } else {
             return res.status(404).send("Report not available yet.");
         }
