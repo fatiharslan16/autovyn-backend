@@ -16,13 +16,38 @@ const API_SECRET = process.env.REPORT_PROVIDER_SECRET;
 // Resend email service
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// Create reports folder if not exists
-const reportsDir = path.join(__dirname, 'reports');
-if (!fs.existsSync(reportsDir)) {
-    fs.mkdirSync(reportsDir);
+// ✅ Helper function to wait for Carfax link
+async function waitForCarfaxLink(vin, retries = 12, interval = 10000) {
+    for (let i = 0; i < retries; i++) {
+        const response = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
+            headers: {
+                "API-KEY": API_KEY,
+                "API-SECRET": API_SECRET,
+            },
+        });
+
+        const data = response.data;
+
+        if (data && data.carfax_link) {
+            return data.carfax_link;
+        }
+
+        console.log(`Carfax link not ready. Retry ${i + 1}/${retries}...`);
+        await new Promise(resolve => setTimeout(resolve, interval));
+    }
+
+    return null;
 }
 
-// ✅ Stripe webhook
+app.use(cors({
+    origin: ["https://autovyn.net", "https://www.autovyn.net"],
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type"]
+}));
+
+app.use(express.json());
+
+// ✅ Webhook (wait + retry version)
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
 
@@ -43,23 +68,12 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
         console.log(`Payment received. VIN: ${vin}, Email: ${customerEmail}`);
 
-        try {
-            const recordsResponse = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
-                headers: {
-                    "API-KEY": API_KEY,
-                    "API-SECRET": API_SECRET,
-                },
-            });
+        // Wait 5 seconds before checking
+        await new Promise(resolve => setTimeout(resolve, 5000));
 
-            const records = recordsResponse.data;
+        const carfaxLink = await waitForCarfaxLink(vin);
 
-            if (!records.carfax_link) {
-                console.log('Carfax link not available yet.');
-                return res.status(200).send("Carfax link not available yet");
-            }
-
-            const carfaxLink = records.carfax_link;
-
+        if (carfaxLink) {
             await resend.emails.send({
                 from: 'Autovyn <onboarding@resend.dev>',
                 to: customerEmail,
@@ -69,25 +83,15 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
             });
 
             console.log(`Report link email sent to ${customerEmail}`);
-
-        } catch (error) {
-            console.error('Error while processing report:', error.message);
+        } else {
+            console.log('Carfax link still not ready after waiting.');
         }
     }
 
     res.status(200).send('Webhook received');
 });
 
-// ✅ CORS
-app.use(cors({
-    origin: ["https://autovyn.net", "https://www.autovyn.net"],
-    methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type"]
-}));
-
-app.use(express.json());
-
-// ✅ Home test route
+// ✅ Home
 app.get('/', (req, res) => {
     res.send('Autovyn backend is running.');
 });
@@ -126,7 +130,7 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     }
 });
 
-// ✅ Report with email sending (simple link version)
+// ✅ Report route → send email if needed + redirect/show report
 app.get('/report/:vin', async (req, res) => {
     const vin = req.params.vin;
     const email = req.query.email;
@@ -175,7 +179,7 @@ app.get('/report/:vin', async (req, res) => {
                     html: `<p>Your report is ready. Click the link below to view or download it:</p>
                            <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${email}" target="_blank">Download Your Report</a></p>`,
                 });
-                console.log(`HTML Report email link sent to ${email}`);
+                console.log(`HTML report email link sent to ${email}`);
             }
 
             res.setHeader("Content-Type", "text/html");
@@ -190,7 +194,7 @@ app.get('/report/:vin', async (req, res) => {
     }
 });
 
-// ✅ Checkout
+// ✅ Stripe checkout
 app.post('/create-checkout-session', async (req, res) => {
     const { vin, email, vehicle } = req.body;
 
@@ -225,7 +229,7 @@ app.post('/create-checkout-session', async (req, res) => {
     }
 });
 
-// ✅ Start server
+// ✅ Start
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
