@@ -44,7 +44,6 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         console.log(`Payment received. VIN: ${vin}, Email: ${customerEmail}`);
 
         try {
-            // Check latest records
             const recordsResponse = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
                 headers: {
                     "API-KEY": API_KEY,
@@ -61,7 +60,6 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
             const carfaxLink = records.carfax_link;
 
-            // ✅ Send email
             await resend.emails.send({
                 from: 'Autovyn <onboarding@resend.dev>',
                 to: customerEmail,
@@ -129,13 +127,12 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     }
 });
 
-// ✅ Redirect to Carfax link or show error (improved + send email if ready)
+// ✅ Report with email sending
 app.get('/report/:vin', async (req, res) => {
     const vin = req.params.vin;
     const email = req.query.email;
 
     try {
-        // Step 1: Check from checkrecords
         const recordsResponse = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
             headers: {
                 "API-KEY": API_KEY,
@@ -147,20 +144,18 @@ app.get('/report/:vin', async (req, res) => {
 
         if (data && data.carfax_link) {
             if (email) {
-                // Send email if email provided
                 await resend.emails.send({
                     from: 'Autovyn <onboarding@resend.dev>',
                     to: email,
                     subject: `Your Autovyn Report (VIN: ${vin})`,
                     html: `<p>Your Carfax report is ready: <a href="${data.carfax_link}" target="_blank">View Report</a></p>`,
                 });
-                console.log(`Report link sent to ${email}`);
+                console.log(`Carfax link email sent to ${email}`);
             }
 
             return res.redirect(data.carfax_link);
         }
 
-        // Step 2: No link → check getrecord/carfax
         const carfaxResponse = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
             headers: {
                 "API-KEY": API_KEY,
@@ -172,20 +167,22 @@ app.get('/report/:vin', async (req, res) => {
 
         if (reportContent && reportContent !== "No record found") {
 
+            const decodedReport = Buffer.from(reportContent, 'base64').toString('utf-8');
+
             if (email) {
-                // Send email if email provided
                 await resend.emails.send({
                     from: 'Autovyn <onboarding@resend.dev>',
                     to: email,
                     subject: `Your Autovyn Report (VIN: ${vin})`,
                     html: `<p>Your Carfax report is ready. Please find the report below:</p>
-                           <p>(You can also download from website)</p>`,
+                           ${decodedReport}
+                           <p>You can also <a href="https://autovyn.net/report.html?vin=${vin}&email=${email}" target="_blank">view/download from website</a>.</p>`,
                 });
                 console.log(`HTML Report email sent to ${email}`);
             }
 
             res.setHeader("Content-Type", "text/html");
-            return res.send(Buffer.from(reportContent, 'base64').toString('utf-8'));
+            return res.send(decodedReport);
         } else {
             return res.status(404).send("Report not available yet.");
         }
@@ -196,7 +193,7 @@ app.get('/report/:vin', async (req, res) => {
     }
 });
 
-// ✅ Stripe checkout session
+// ✅ Checkout
 app.post('/create-checkout-session', async (req, res) => {
     const { vin, email, vehicle } = req.body;
 
@@ -211,7 +208,7 @@ app.post('/create-checkout-session', async (req, res) => {
                         product_data: {
                             name: `Autovyn Carfax Report - ${vehicle} (VIN: ${vin})`,
                         },
-                        unit_amount: 349,
+                        unit_amount: 299,
                     },
                     quantity: 1,
                 },
