@@ -81,9 +81,9 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     res.status(200).send('Webhook received');
 });
 
-// ✅ CORS (frontend domain)
+// ✅ CORS (frontend domain fixed)
 app.use(cors({
-    origin: ["https://autovyn-frontend.vercel.app"],
+    origin: ["https://autovyn.net", "https://www.autovyn.net"],
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"]
 }));
@@ -154,7 +154,7 @@ app.get('/report/:vin', async (req, res) => {
     }
 });
 
-//  Stripe checkout session
+// ✅ Stripe checkout session
 app.post('/create-checkout-session', async (req, res) => {
     const { vin, email, vehicle } = req.body;
 
@@ -179,8 +179,8 @@ app.post('/create-checkout-session', async (req, res) => {
                 email: email,
                 vehicle: vehicle
             },
-            success_url: `https://autovyn-frontend.vercel.app/report.html?vin=${vin}`,
-            cancel_url: 'https://autovyn-frontend.vercel.app/?status=cancel',
+            success_url: `https://autovyn.net/report.html?vin=${vin}`,
+            cancel_url: 'https://autovyn.net/?status=cancel',
         });
 
         res.json({ url: session.url });
@@ -189,7 +189,7 @@ app.post('/create-checkout-session', async (req, res) => {
     }
 });
 
-//  Start server
+// ✅ Start server
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
