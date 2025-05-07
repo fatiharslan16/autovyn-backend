@@ -129,9 +129,10 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     }
 });
 
-// ✅ Redirect to Carfax link or show error (improved)
+// ✅ Redirect to Carfax link or show error (improved + send email if ready)
 app.get('/report/:vin', async (req, res) => {
     const vin = req.params.vin;
+    const email = req.query.email;
 
     try {
         // Step 1: Check from checkrecords
@@ -145,6 +146,17 @@ app.get('/report/:vin', async (req, res) => {
         const data = recordsResponse.data;
 
         if (data && data.carfax_link) {
+            if (email) {
+                // Send email if email provided
+                await resend.emails.send({
+                    from: 'Autovyn <onboarding@resend.dev>',
+                    to: email,
+                    subject: `Your Autovyn Report (VIN: ${vin})`,
+                    html: `<p>Your Carfax report is ready: <a href="${data.carfax_link}" target="_blank">View Report</a></p>`,
+                });
+                console.log(`Report link sent to ${email}`);
+            }
+
             return res.redirect(data.carfax_link);
         }
 
@@ -159,6 +171,19 @@ app.get('/report/:vin', async (req, res) => {
         const reportContent = carfaxResponse.data;
 
         if (reportContent && reportContent !== "No record found") {
+
+            if (email) {
+                // Send email if email provided
+                await resend.emails.send({
+                    from: 'Autovyn <onboarding@resend.dev>',
+                    to: email,
+                    subject: `Your Autovyn Report (VIN: ${vin})`,
+                    html: `<p>Your Carfax report is ready. Please find the report below:</p>
+                           <p>(You can also download from website)</p>`,
+                });
+                console.log(`HTML Report email sent to ${email}`);
+            }
+
             res.setHeader("Content-Type", "text/html");
             return res.send(Buffer.from(reportContent, 'base64').toString('utf-8'));
         } else {
@@ -186,7 +211,7 @@ app.post('/create-checkout-session', async (req, res) => {
                         product_data: {
                             name: `Autovyn Carfax Report - ${vehicle} (VIN: ${vin})`,
                         },
-                        unit_amount: 299,
+                        unit_amount: 349,
                     },
                     quantity: 1,
                 },
