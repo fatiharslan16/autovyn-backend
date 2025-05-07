@@ -181,7 +181,7 @@ app.post('/create-checkout-session', async (req, res) => {
                         product_data: {
                             name: `Autovyn Carfax Report - ${vehicle} (VIN: ${vin})`,
                         },
-                        unit_amount: 001,
+                        unit_amount: 300,
                     },
                     quantity: 1,
                 },
