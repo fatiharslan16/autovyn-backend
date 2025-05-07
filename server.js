@@ -3,8 +3,6 @@ const axios = require('axios');
 const cors = require('cors');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { Resend } = require('resend');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -16,29 +14,7 @@ const API_SECRET = process.env.REPORT_PROVIDER_SECRET;
 // Resend email service
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ✅ Helper function to wait for Carfax link
-async function waitForCarfaxLink(vin, retries = 12, interval = 10000) {
-    for (let i = 0; i < retries; i++) {
-        const response = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
-            headers: {
-                "API-KEY": API_KEY,
-                "API-SECRET": API_SECRET,
-            },
-        });
-
-        const data = response.data;
-
-        if (data && data.carfax_link) {
-            return data.carfax_link;
-        }
-
-        console.log(`Carfax link not ready. Retry ${i + 1}/${retries}...`);
-        await new Promise(resolve => setTimeout(resolve, interval));
-    }
-
-    return null;
-}
-
+// ✅ CORS setup
 app.use(cors({
     origin: ["https://autovyn.net", "https://www.autovyn.net"],
     methods: ["GET", "POST"],
@@ -47,7 +23,7 @@ app.use(cors({
 
 app.use(express.json());
 
-// ✅ Webhook (wait + retry version)
+// ✅ Webhook - Payment successful -> send download link
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
 
@@ -68,30 +44,26 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
         console.log(`Payment received. VIN: ${vin}, Email: ${customerEmail}`);
 
-        // Wait 5 seconds before checking
-        await new Promise(resolve => setTimeout(resolve, 5000));
-
-        const carfaxLink = await waitForCarfaxLink(vin);
-
-        if (carfaxLink) {
+        try {
             await resend.emails.send({
                 from: 'Autovyn <onboarding@resend.dev>',
                 to: customerEmail,
                 subject: `Your Autovyn Report for ${vehicleInfo} (VIN: ${vin})`,
-                html: `<p>Your report is ready. Click the link below to view or download it:</p>
-                       <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${customerEmail}" target="_blank">Download Your Report</a></p>`,
+                html: `<p>Thank you for your purchase!</p>
+                       <p>Your report will be ready soon. You can check and download it using the link below:</p>
+                       <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${customerEmail}" target="_blank">Download/View Your Report</a></p>`,
             });
 
             console.log(`Report link email sent to ${customerEmail}`);
-        } else {
-            console.log('Carfax link still not ready after waiting.');
+        } catch (error) {
+            console.error('Error sending email:', error.message);
         }
     }
 
     res.status(200).send('Webhook received');
 });
 
-// ✅ Home
+// ✅ Home route
 app.get('/', (req, res) => {
     res.send('Autovyn backend is running.');
 });
@@ -130,7 +102,7 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     }
 });
 
-// ✅ Report route → send email if needed + redirect/show report
+// ✅ Report route - user clicks email link -> redirect or show report
 app.get('/report/:vin', async (req, res) => {
     const vin = req.params.vin;
     const email = req.query.email;
@@ -151,8 +123,8 @@ app.get('/report/:vin', async (req, res) => {
                     from: 'Autovyn <onboarding@resend.dev>',
                     to: email,
                     subject: `Your Autovyn Report (VIN: ${vin})`,
-                    html: `<p>Your report is ready. Click the link below to view or download it:</p>
-                           <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${email}" target="_blank">Download Your Report</a></p>`,
+                    html: `<p>Your report is ready. Click below to view/download:</p>
+                           <p><a href="${data.carfax_link}" target="_blank">View Report</a></p>`,
                 });
                 console.log(`Carfax link email sent to ${email}`);
             }
@@ -176,8 +148,8 @@ app.get('/report/:vin', async (req, res) => {
                     from: 'Autovyn <onboarding@resend.dev>',
                     to: email,
                     subject: `Your Autovyn Report (VIN: ${vin})`,
-                    html: `<p>Your report is ready. Click the link below to view or download it:</p>
-                           <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${email}" target="_blank">Download Your Report</a></p>`,
+                    html: `<p>Your report is ready. Click below to view/download:</p>
+                           <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${email}" target="_blank">View Report</a></p>`,
                 });
                 console.log(`HTML report email link sent to ${email}`);
             }
@@ -194,7 +166,7 @@ app.get('/report/:vin', async (req, res) => {
     }
 });
 
-// ✅ Stripe checkout
+// ✅ Stripe checkout session
 app.post('/create-checkout-session', async (req, res) => {
     const { vin, email, vehicle } = req.body;
 
@@ -229,7 +201,7 @@ app.post('/create-checkout-session', async (req, res) => {
     }
 });
 
-// ✅ Start
+// ✅ Start server
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
