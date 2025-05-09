@@ -17,7 +17,7 @@ app.use(cors({
     allowedHeaders: ["Content-Type"]
 }));
 
-// ✅ Webhook (must use raw body)
+// ✅ Stripe Webhook (use raw body)
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
     let event;
@@ -43,8 +43,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 to: customerEmail,
                 subject: `Your Autovyn Report for ${vehicleInfo} (VIN: ${vin})`,
                 html: `<p>Thank you for your purchase!</p>
-                       <p>Your report will be ready soon. You can download it using the link below:</p>
-                       <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${customerEmail}" target="_blank">Download/View Your Report</a></p>`,
+                       <p>Your report will be ready soon. You can download it here:</p>
+                       <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${customerEmail}" target="_blank">Download/View Your Report</a></p>`
             });
 
             console.log(`Report link email sent to ${customerEmail}`);
@@ -56,7 +56,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     res.status(200).send('Webhook received');
 });
 
-// ✅ Must use express.json AFTER webhook
+// ✅ Enable JSON parsing after webhook
 app.use(express.json());
 
 // ✅ Home route
@@ -64,10 +64,9 @@ app.get('/', (req, res) => {
     res.send('Autovyn backend is running.');
 });
 
-// ✅ VIN lookup
+// ✅ VIN info route
 app.get('/vehicle-info/:vin', async (req, res) => {
     const vin = req.params.vin;
-
     console.log("Received VIN request:", vin);
 
     try {
@@ -81,16 +80,9 @@ app.get('/vehicle-info/:vin', async (req, res) => {
         const data = response.data;
 
         if (data && data.vehicle) {
-            res.json({
-                success: true,
-                vin: vin,
-                vehicle: data.vehicle
-            });
+            res.json({ success: true, vin, vehicle: data.vehicle });
         } else {
-            res.json({
-                success: false,
-                message: "VIN not found or no vehicle information available."
-            });
+            res.json({ success: false, message: "VIN not found or no vehicle information available." });
         }
 
     } catch (error) {
@@ -98,7 +90,7 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     }
 });
 
-// ✅ Report route → user clicks download link → check + redirect
+// ✅ Report download + optional email
 app.get('/report/:vin', async (req, res) => {
     const vin = req.params.vin;
     const email = req.query.email;
@@ -120,7 +112,7 @@ app.get('/report/:vin', async (req, res) => {
                     to: email,
                     subject: `Your Autovyn Report (VIN: ${vin}) is ready`,
                     html: `<p>Your report is ready. Click below to view/download:</p>
-                           <p><a href="${data.carfax_link}" target="_blank">View Report</a></p>`,
+                           <p><a href="${data.carfax_link}" target="_blank">View Report</a></p>`
                 });
                 console.log(`Carfax link email sent to ${email}`);
             }
@@ -144,7 +136,7 @@ app.get('/report/:vin', async (req, res) => {
                     to: email,
                     subject: `Your Autovyn Report (VIN: ${vin}) is ready`,
                     html: `<p>Your report is ready. Click below to view/download:</p>
-                           <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${email}" target="_blank">View Report</a></p>`,
+                           <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${email}" target="_blank">View Report</a></p>`
                 });
                 console.log(`HTML report email link sent to ${email}`);
             }
@@ -161,7 +153,7 @@ app.get('/report/:vin', async (req, res) => {
     }
 });
 
-// ✅ Stripe checkout
+// ✅ Stripe Checkout Session
 app.post('/create-checkout-session', async (req, res) => {
     const { vin, email, vehicle } = req.body;
 
@@ -179,24 +171,21 @@ app.post('/create-checkout-session', async (req, res) => {
                 },
                 quantity: 1,
             }],
-            metadata: {
-                vin: vin,
-                email: email,
-                vehicle: vehicle
-            },
+            metadata: { vin, email, vehicle },
             success_url: `https://autovyn.net/report.html?vin=${vin}&email=${email}`,
             cancel_url: 'https://autovyn.net/?status=cancel',
         });
 
         res.json({ url: session.url });
     } catch (error) {
+        console.error(error.message);
         res.status(500).send('Internal Server Error');
     }
 });
 
-// ✅ New: Contact form email via Resend
+// ✅ Contact Form Submission → Send to autovynsupport@autovyn.net
 app.post('/contact', async (req, res) => {
-    const { name, vin, message } = req.body;
+    const { name, email, vin, message } = req.body;
 
     try {
         await resend.emails.send({
@@ -205,6 +194,7 @@ app.post('/contact', async (req, res) => {
             subject: `Customer Message from ${name}`,
             html: `
                 <p><strong>Name:</strong> ${name}</p>
+                <p><strong>Email:</strong> ${email}</p>
                 <p><strong>VIN:</strong> ${vin}</p>
                 <p><strong>Message:</strong><br>${message}</p>
             `
