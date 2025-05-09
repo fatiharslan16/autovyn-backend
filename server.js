@@ -7,24 +7,19 @@ const { Resend } = require('resend');
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Carsimulcast API credentials
 const API_KEY = process.env.REPORT_PROVIDER_API;
 const API_SECRET = process.env.REPORT_PROVIDER_SECRET;
-
-// Resend email service
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ✅ CORS
 app.use(cors({
     origin: ["https://autovyn.net", "https://www.autovyn.net"],
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"]
 }));
 
-// ✅ Webhook (must be raw body)
+// ✅ Webhook (must use raw body)
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
-
     let event;
 
     try {
@@ -43,7 +38,6 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         console.log(`Payment received. VIN: ${vin}, Email: ${customerEmail}`);
 
         try {
-            // ✅ Send email immediately with download link
             await resend.emails.send({
                 from: 'Autovyn <onboarding@resend.dev>',
                 to: customerEmail,
@@ -62,7 +56,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     res.status(200).send('Webhook received');
 });
 
-// ✅ Enable express.json AFTER webhook
+// ✅ Must use express.json AFTER webhook
 app.use(express.json());
 
 // ✅ Home route
@@ -104,7 +98,7 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     }
 });
 
-// ✅ Report route → user clicks download link -> check + redirect
+// ✅ Report route → user clicks download link → check + redirect
 app.get('/report/:vin', async (req, res) => {
     const vin = req.params.vin;
     const email = req.query.email;
@@ -144,7 +138,6 @@ app.get('/report/:vin', async (req, res) => {
         const reportContent = carfaxResponse.data;
 
         if (reportContent && reportContent !== "No record found") {
-
             if (email) {
                 await resend.emails.send({
                     from: 'Autovyn <onboarding@resend.dev>',
@@ -176,18 +169,16 @@ app.post('/create-checkout-session', async (req, res) => {
         const session = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
             mode: 'payment',
-            line_items: [
-                {
-                    price_data: {
-                        currency: 'usd',
-                        product_data: {
-                            name: `Autovyn Carfax Report - ${vehicle} (VIN: ${vin})`,
-                        },
-                        unit_amount: 399,
+            line_items: [{
+                price_data: {
+                    currency: 'usd',
+                    product_data: {
+                        name: `Autovyn Carfax Report - ${vehicle} (VIN: ${vin})`,
                     },
-                    quantity: 1,
+                    unit_amount: 399,
                 },
-            ],
+                quantity: 1,
+            }],
             metadata: {
                 vin: vin,
                 email: email,
@@ -203,7 +194,29 @@ app.post('/create-checkout-session', async (req, res) => {
     }
 });
 
-// ✅ Start server
+// ✅ New: Contact form email via Resend
+app.post('/contact', async (req, res) => {
+    const { name, vin, message } = req.body;
+
+    try {
+        await resend.emails.send({
+            from: 'Autovyn Contact <no-reply@autovyn.net>',
+            to: 'autovynsupport@autovyn.net',
+            subject: `Customer Message from ${name}`,
+            html: `
+                <p><strong>Name:</strong> ${name}</p>
+                <p><strong>VIN:</strong> ${vin}</p>
+                <p><strong>Message:</strong><br>${message}</p>
+            `
+        });
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Error sending contact form:', err);
+        res.status(500).json({ success: false, message: 'Failed to send message' });
+    }
+});
+
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
