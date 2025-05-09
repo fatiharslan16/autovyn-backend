@@ -11,13 +11,14 @@ const API_KEY = process.env.REPORT_PROVIDER_API;
 const API_SECRET = process.env.REPORT_PROVIDER_SECRET;
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// ✅ CORS
 app.use(cors({
     origin: ["https://autovyn.net", "https://www.autovyn.net"],
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"]
 }));
 
-// ✅ Stripe Webhook (use raw body)
+// ✅ Stripe Webhook
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
     let event;
@@ -39,11 +40,11 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
         try {
             await resend.emails.send({
-                from: 'Autovyn <onboarding@resend.dev>',
+                from: 'Autovyn Contact <autovynsupport@autovyn.net>',
                 to: customerEmail,
                 subject: `Your Autovyn Report for ${vehicleInfo} (VIN: ${vin})`,
                 html: `<p>Thank you for your purchase!</p>
-                       <p>Your report will be ready soon. You can download it here:</p>
+                       <p>Your report will be ready soon. You can download it using the link below:</p>
                        <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${customerEmail}" target="_blank">Download/View Your Report</a></p>`
             });
 
@@ -56,7 +57,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     res.status(200).send('Webhook received');
 });
 
-// ✅ Enable JSON parsing after webhook
+// ✅ Enable JSON after webhook
 app.use(express.json());
 
 // ✅ Home route
@@ -64,7 +65,7 @@ app.get('/', (req, res) => {
     res.send('Autovyn backend is running.');
 });
 
-// ✅ VIN info route
+// ✅ VIN info lookup
 app.get('/vehicle-info/:vin', async (req, res) => {
     const vin = req.params.vin;
     console.log("Received VIN request:", vin);
@@ -90,7 +91,7 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     }
 });
 
-// ✅ Report download + optional email
+// ✅ Report download route
 app.get('/report/:vin', async (req, res) => {
     const vin = req.params.vin;
     const email = req.query.email;
@@ -108,7 +109,7 @@ app.get('/report/:vin', async (req, res) => {
         if (data && data.carfax_link) {
             if (email) {
                 await resend.emails.send({
-                    from: 'Autovyn <onboarding@resend.dev>',
+                    from: 'Autovyn Contact <autovynsupport@autovyn.net>',
                     to: email,
                     subject: `Your Autovyn Report (VIN: ${vin}) is ready`,
                     html: `<p>Your report is ready. Click below to view/download:</p>
@@ -132,7 +133,7 @@ app.get('/report/:vin', async (req, res) => {
         if (reportContent && reportContent !== "No record found") {
             if (email) {
                 await resend.emails.send({
-                    from: 'Autovyn <onboarding@resend.dev>',
+                    from: 'Autovyn Contact <autovynsupport@autovyn.net>',
                     to: email,
                     subject: `Your Autovyn Report (VIN: ${vin}) is ready`,
                     html: `<p>Your report is ready. Click below to view/download:</p>
@@ -153,7 +154,7 @@ app.get('/report/:vin', async (req, res) => {
     }
 });
 
-// ✅ Stripe Checkout Session
+// ✅ Stripe Checkout
 app.post('/create-checkout-session', async (req, res) => {
     const { vin, email, vehicle } = req.body;
 
@@ -183,13 +184,13 @@ app.post('/create-checkout-session', async (req, res) => {
     }
 });
 
-// ✅ Contact Form Submission → Send to autovynsupport@autovyn.net
+// ✅ Contact Form (customer support message)
 app.post('/contact', async (req, res) => {
     const { name, email, vin, message } = req.body;
 
     try {
         await resend.emails.send({
-            from: 'Autovyn Contact <no-reply@autovyn.net>',
+            from: 'Autovyn Contact <autovynsupport@autovyn.net>',
             to: 'autovynsupport@autovyn.net',
             subject: `Customer Message from ${name}`,
             html: `
