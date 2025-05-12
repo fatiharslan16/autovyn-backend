@@ -44,7 +44,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 to: customerEmail,
                 subject: `Your Autovyn Report for ${vehicleInfo} (VIN: ${vin})`,
                 html: `<p>Thank you for your purchase!</p>
-                       <p>Your report will be ready soon. You can download it using the link below:</p>
+                       <p>Your report will be ready soon. You can download it here:</p>
                        <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${customerEmail}" target="_blank">Download/View Your Report</a></p>`
             });
 
@@ -65,7 +65,7 @@ app.get('/', (req, res) => {
     res.send('Autovyn backend is running.');
 });
 
-// ✅ VIN info lookup
+// ✅ VIN lookup
 app.get('/vehicle-info/:vin', async (req, res) => {
     const vin = req.params.vin;
     console.log("Received VIN request:", vin);
@@ -91,10 +91,9 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     }
 });
 
-// ✅ Report download route
+// ✅ Report route (no email sending here)
 app.get('/report/:vin', async (req, res) => {
     const vin = req.params.vin;
-    const email = req.query.email;
 
     try {
         const recordsResponse = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
@@ -107,17 +106,6 @@ app.get('/report/:vin', async (req, res) => {
         const data = recordsResponse.data;
 
         if (data && data.carfax_link) {
-            if (email) {
-                await resend.emails.send({
-                    from: 'Autovyn Contact <autovynsupport@autovyn.net>',
-                    to: email,
-                    subject: `Your Autovyn Report (VIN: ${vin}) is ready`,
-                    html: `<p>Your report is ready. Click below to view/download:</p>
-                           <p><a href="${data.carfax_link}" target="_blank">View Report</a></p>`
-                });
-                console.log(`Carfax link email sent to ${email}`);
-            }
-
             return res.redirect(data.carfax_link);
         }
 
@@ -131,17 +119,6 @@ app.get('/report/:vin', async (req, res) => {
         const reportContent = carfaxResponse.data;
 
         if (reportContent && reportContent !== "No record found") {
-            if (email) {
-                await resend.emails.send({
-                    from: 'Autovyn Contact <autovynsupport@autovyn.net>',
-                    to: email,
-                    subject: `Your Autovyn Report (VIN: ${vin}) is ready`,
-                    html: `<p>Your report is ready. Click below to view/download:</p>
-                           <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${email}" target="_blank">View Report</a></p>`
-                });
-                console.log(`HTML report email link sent to ${email}`);
-            }
-
             res.setHeader("Content-Type", "text/html");
             return res.send(Buffer.from(reportContent, 'base64').toString('utf-8'));
         } else {
@@ -184,7 +161,7 @@ app.post('/create-checkout-session', async (req, res) => {
     }
 });
 
-// ✅ Contact Form (customer support message)
+// ✅ Customer Contact Form
 app.post('/contact', async (req, res) => {
     const { name, email, vin, message } = req.body;
 
