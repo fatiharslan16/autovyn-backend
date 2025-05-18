@@ -11,14 +11,12 @@ const API_KEY = process.env.REPORT_PROVIDER_API;
 const API_SECRET = process.env.REPORT_PROVIDER_SECRET;
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ✅ CORS
 app.use(cors({
     origin: ["https://autovyn.net", "https://www.autovyn.net"],
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"]
 }));
 
-// ✅ Stripe Webhook
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
     let event;
@@ -39,33 +37,45 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         console.log(`Payment received. VIN: ${vin}, Email: ${customerEmail}`);
 
         try {
-            await resend.emails.send({
-                from: 'Autovyn Contact <autovynsupport@autovyn.net>',
-                to: customerEmail,
-                subject: `Your Autovyn Report for ${vehicleInfo} (VIN: ${vin})`,
-                html: `<p>Thank you for your purchase!</p>
-                       <p>Your report will be ready soon. You can download it here:</p>
-                       <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${customerEmail}" target="_blank">Download/View Your Report</a></p>`
+            await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+
+            const response = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
+                headers: {
+                    "API-KEY": API_KEY,
+                    "API-SECRET": API_SECRET,
+                },
             });
 
-            console.log(`Report link email sent to ${customerEmail}`);
+            const link = response.data?.carfax_link;
+
+            if (link) {
+                await resend.emails.send({
+                    from: 'Autovyn Contact <autovynsupport@autovyn.net>',
+                    to: customerEmail,
+                    subject: `Your Autovyn Report for ${vehicleInfo} (VIN: ${vin})`,
+                    html: `<p>Thank you for your purchase!</p>
+                           <p>Your report is ready in PDF format:</p>
+                           <p><a href="${link}/pdf" target="_blank">${link}/pdf</a></p>`
+                });
+
+                console.log(`Email sent with Carfax link: ${link}/pdf`);
+            } else {
+                console.log('Carfax link missing in response');
+            }
         } catch (error) {
-            console.error('Error sending email:', error.message);
+            console.error('Error after payment:', error.message);
         }
     }
 
     res.status(200).send('Webhook received');
 });
 
-// ✅ Enable JSON after webhook
 app.use(express.json());
 
-// ✅ Home route
 app.get('/', (req, res) => {
     res.send('Autovyn backend is running.');
 });
 
-// ✅ VIN lookup
 app.get('/vehicle-info/:vin', async (req, res) => {
     const vin = req.params.vin;
     console.log("Received VIN request:", vin);
@@ -85,57 +95,24 @@ app.get('/vehicle-info/:vin', async (req, res) => {
         } else {
             res.json({ success: false, message: "VIN not found or no vehicle information available." });
         }
-
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error fetching vehicle info.' });
     }
 });
 
-// ✅ Report route (no email sending here)
-app.get('/report/:vin', async (req, res) => {
-    const vin = req.params.vin;
-
-    try {
-        const recordsResponse = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
-            headers: {
-                "API-KEY": API_KEY,
-                "API-SECRET": API_SECRET,
-            },
-        });
-
-        const data = recordsResponse.data;
-
-        if (data && data.carfax_link) {
-            return res.redirect(data.carfax_link);
-        }
-
-        const carfaxResponse = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
-            headers: {
-                "API-KEY": API_KEY,
-                "API-SECRET": API_SECRET,
-            },
-        });
-
-        const reportContent = carfaxResponse.data;
-
-        if (reportContent && reportContent !== "No record found") {
-            res.setHeader("Content-Type", "text/html");
-            return res.send(Buffer.from(reportContent, 'base64').toString('utf-8'));
-        } else {
-            return res.status(404).send("Report not available yet.");
-        }
-
-    } catch (error) {
-        console.error(error.message);
-        res.status(500).send("Error fetching report.");
-    }
-});
-
-// ✅ Stripe Checkout
 app.post('/create-checkout-session', async (req, res) => {
     const { vin, email, vehicle } = req.body;
 
     try {
+        const response = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
+            headers: {
+                "API-KEY": API_KEY,
+                "API-SECRET": API_SECRET,
+            },
+        });
+
+        const carfaxLink = response.data?.carfax_link;
+
         const session = await stripe.checkout.sessions.create({
             payment_method_types: ['card'],
             mode: 'payment',
@@ -150,7 +127,7 @@ app.post('/create-checkout-session', async (req, res) => {
                 quantity: 1,
             }],
             metadata: { vin, email, vehicle },
-            success_url: `https://autovyn.net/report.html?vin=${vin}&email=${email}`,
+            success_url: `https://autovyn.net/report.html?vin=${vin}&email=${email}&carfax=${encodeURIComponent(carfaxLink)}`,
             cancel_url: 'https://autovyn.net/?status=cancel',
         });
 
@@ -161,7 +138,7 @@ app.post('/create-checkout-session', async (req, res) => {
     }
 });
 
-// ✅ Customer Contact Form
+// Contact form (optional)
 app.post('/contact', async (req, res) => {
     const { name, email, vin, message } = req.body;
 
