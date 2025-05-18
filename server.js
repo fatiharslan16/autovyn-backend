@@ -67,12 +67,12 @@ app.use(cors({
   allowedHeaders: ["Content-Type"]
 }));
 
-// ✅ Home
+// ✅ Home route
 app.get('/', (req, res) => {
   res.send('Autovyn backend is running.');
 });
 
-// ✅ VIN info before payment (uses checkrecords)
+// ✅ VIN info before payment
 app.get('/vehicle-info/:vin', async (req, res) => {
   const vin = req.params.vin;
 
@@ -102,6 +102,8 @@ app.post('/create-checkout-session', async (req, res) => {
   const { vin, email, vehicle } = req.body;
 
   try {
+    const pdfLink = await generateReportPDF(vin, vehicle); // pre-generate PDF so we pass it in success_url
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       mode: 'payment',
@@ -111,12 +113,12 @@ app.post('/create-checkout-session', async (req, res) => {
           product_data: {
             name: `Autovyn Carfax Report - ${vehicle} (VIN: ${vin})`
           },
-          unit_amount: 399
+          unit_amount: 199
         },
         quantity: 1
       }],
       metadata: { vin, email, vehicle },
-      success_url: `https://autovyn.net/report.html?vin=${vin}&email=${email}`,
+      success_url: `https://autovyn.net/report.html?vin=${vin}&email=${email}&link=${encodeURIComponent(pdfLink || '')}`,
       cancel_url: 'https://autovyn.net/?status=cancel'
     });
 
@@ -128,7 +130,7 @@ app.post('/create-checkout-session', async (req, res) => {
   }
 });
 
-// ✅ Contact form handler
+// ✅ Contact form
 app.post('/contact', async (req, res) => {
   const { name, email, vin, message } = req.body;
 
@@ -152,10 +154,9 @@ app.post('/contact', async (req, res) => {
   }
 });
 
-// ✅ Generate PDF from Carfax base64 report using getrecord + /pdf
+// ✅ Get base64 & convert to PDF
 async function generateReportPDF(vin, vehicleName) {
   try {
-    // Step 1: Get base64 report content
     const recordRes = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
       headers: {
         "API-KEY": API_KEY,
@@ -169,7 +170,6 @@ async function generateReportPDF(vin, vehicleName) {
       return null;
     }
 
-    // Step 2: Convert to PDF
     const pdfRes = await axios.post(
       'https://connect.carsimulcast.com/pdf',
       {
@@ -188,7 +188,7 @@ async function generateReportPDF(vin, vehicleName) {
 
     const pdfLink = pdfRes.data?.pdf_link;
     if (pdfLink) {
-      console.log("✅ PDF generated:", pdfLink);
+      console.log("✅ PDF link created:", pdfLink);
       return pdfLink;
     }
 
@@ -196,7 +196,7 @@ async function generateReportPDF(vin, vehicleName) {
     return null;
 
   } catch (err) {
-    console.error("❌ Error during report PDF generation:", err.message);
+    console.error("❌ Error converting to PDF:", err.message);
     return null;
   }
 }
