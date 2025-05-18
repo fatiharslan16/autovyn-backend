@@ -113,7 +113,7 @@ app.post('/create-checkout-session', async (req, res) => {
           product_data: {
             name: `Autovyn Carfax Report - ${vehicle} (VIN: ${vin})`
           },
-          unit_amount: 199
+          unit_amount: 399
         },
         quantity: 1
       }],
@@ -165,13 +165,10 @@ async function generateReportPDF(vin, vehicleName) {
     });
 
     const base64Content = recordRes.data;
-
     if (!base64Content || typeof base64Content !== 'string') {
       console.log("❌ Base64 report content missing.");
       return null;
     }
-
-    console.log("✅ Received base64 content. Converting...");
 
     const pdfRes = await axios.post(
       'https://connect.carsimulcast.com/pdf',
@@ -189,16 +186,13 @@ async function generateReportPDF(vin, vehicleName) {
       }
     );
 
-    console.log("📦 PDF API response:", pdfRes.data);
-
-    const pdfLink = pdfRes.data?.pdf_link || pdfRes.data?.link || pdfRes.data?.url || null;
-
+    const pdfLink = pdfRes.data?.pdf_link;
     if (pdfLink) {
       console.log("✅ PDF link created:", pdfLink);
       return pdfLink;
     }
 
-    console.log("❌ PDF response did not contain a usable link.");
+    console.log("❌ PDF response did not contain a link.");
     return null;
 
   } catch (err) {
