@@ -7,7 +7,6 @@ const { Resend } = require('resend');
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Environment configs
 const API_KEY = process.env.REPORT_PROVIDER_API;
 const API_SECRET = process.env.REPORT_PROVIDER_SECRET;
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -33,11 +32,9 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     console.log(`✅ Payment successful: VIN ${vin}, Email ${customerEmail}`);
 
     try {
-      const carfaxLink = await getCarfaxLinkOnce(vin);
+      const pdfLink = await generateReportPDF(vin, vehicleInfo);
 
-      if (carfaxLink) {
-        const pdfLink = `${carfaxLink}/pdf`;
-
+      if (pdfLink) {
         await resend.emails.send({
           from: 'Autovyn <autovynsupport@autovyn.net>',
           to: customerEmail,
@@ -51,7 +48,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
         console.log(`📧 Email sent with PDF link: ${pdfLink}`);
       } else {
-        console.log('❌ Report link missing in checkrecords response');
+        console.log('❌ Report PDF generation failed.');
       }
 
     } catch (err) {
@@ -75,7 +72,7 @@ app.get('/', (req, res) => {
   res.send('Autovyn backend is running.');
 });
 
-// ✅ VIN info before payment
+// ✅ VIN info before payment (uses checkrecords)
 app.get('/vehicle-info/:vin', async (req, res) => {
   const vin = req.params.vin;
 
@@ -105,7 +102,6 @@ app.post('/create-checkout-session', async (req, res) => {
   const { vin, email, vehicle } = req.body;
 
   try {
-    const carfaxLink = await getCarfaxLinkOnce(vin);
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
       mode: 'payment',
@@ -120,7 +116,7 @@ app.post('/create-checkout-session', async (req, res) => {
         quantity: 1
       }],
       metadata: { vin, email, vehicle },
-      success_url: `https://autovyn.net/report.html?vin=${vin}&email=${email}&carfax=${encodeURIComponent(carfaxLink || '')}`,
+      success_url: `https://autovyn.net/report.html?vin=${vin}&email=${email}`,
       cancel_url: 'https://autovyn.net/?status=cancel'
     });
 
@@ -156,27 +152,51 @@ app.post('/contact', async (req, res) => {
   }
 });
 
-// ✅ Single-use fetch of report link
-async function getCarfaxLinkOnce(vin) {
+// ✅ Generate PDF from Carfax base64 report using getrecord + /pdf
+async function generateReportPDF(vin, vehicleName) {
   try {
-    const response = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
+    // Step 1: Get base64 report content
+    const recordRes = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
       headers: {
         "API-KEY": API_KEY,
         "API-SECRET": API_SECRET
       }
     });
 
-    const link = response.data?.carfax_link;
-    if (link) {
-      console.log("✅ Found Carfax link:", link);
-      return link;
+    const base64Content = recordRes.data;
+    if (!base64Content || typeof base64Content !== 'string') {
+      console.log("❌ Base64 report content missing.");
+      return null;
     }
 
-    console.log("❌ carfax_link missing from response");
+    // Step 2: Convert to PDF
+    const pdfRes = await axios.post(
+      'https://connect.carsimulcast.com/pdf',
+      {
+        base64_content: base64Content,
+        report_type: "carfax",
+        vehicle_name: vehicleName,
+        vin
+      },
+      {
+        headers: {
+          "API-KEY": API_KEY,
+          "API-SECRET": API_SECRET
+        }
+      }
+    );
+
+    const pdfLink = pdfRes.data?.pdf_link;
+    if (pdfLink) {
+      console.log("✅ PDF generated:", pdfLink);
+      return pdfLink;
+    }
+
+    console.log("❌ PDF response did not contain a link.");
     return null;
 
   } catch (err) {
-    console.error('Failed to fetch report link:', err.message);
+    console.error("❌ Error during report PDF generation:", err.message);
     return null;
   }
 }
