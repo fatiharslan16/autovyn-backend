@@ -186,7 +186,7 @@ async function generateReportPDF(vin, vehicleName) {
       }
     );
 
-    const pdfLink = pdfRes.data?.pdf_link;
+    const pdfLink = pdfRes.data?.url;
     if (pdfLink) {
       console.log("✅ PDF link created:", pdfLink);
       return pdfLink;
