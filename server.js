@@ -32,7 +32,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     console.log(`✅ Payment successful: VIN ${vin}, Email ${customerEmail}`);
 
     try {
-      const pdfLink = await generateReportPDF(vin, vehicleInfo);
+      const pdfLink = await generateReportLink(vin);
 
       if (pdfLink) {
         await resend.emails.send({
@@ -48,7 +48,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
         console.log(`📧 Email sent with PDF link: ${pdfLink}`);
       } else {
-        console.log('❌ Report PDF generation failed.');
+        console.log('❌ Report link not found after payment.');
       }
 
     } catch (err) {
@@ -102,7 +102,7 @@ app.post('/create-checkout-session', async (req, res) => {
   const { vin, email, vehicle } = req.body;
 
   try {
-    const pdfLink = await generateReportPDF(vin, vehicle); // pre-generate PDF so we pass it in success_url
+    const pdfLink = await generateReportLink(vin); // get ready-made report URL
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
@@ -154,49 +154,27 @@ app.post('/contact', async (req, res) => {
   }
 });
 
-// ✅ Get base64 & convert to PDF
-async function generateReportPDF(vin, vehicleName) {
+// ✅ Get report link (no conversion)
+async function generateReportLink(vin) {
   try {
-    const recordRes = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
+    const res = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
       headers: {
         "API-KEY": API_KEY,
         "API-SECRET": API_SECRET
       }
     });
 
-    const base64Content = recordRes.data;
-    if (!base64Content || typeof base64Content !== 'string') {
-      console.log("❌ Base64 report content missing.");
-      return null;
+    const link = res.data?.carfax_link;
+    if (link) {
+      console.log("✅ Found Carfax link:", link);
+      return `${link}/pdf`;
     }
 
-    const pdfRes = await axios.post(
-      'https://connect.carsimulcast.com/pdf',
-      {
-        base64_content: base64Content,
-        report_type: "carfax",
-        vehicle_name: vehicleName,
-        vin
-      },
-      {
-        headers: {
-          "API-KEY": API_KEY,
-          "API-SECRET": API_SECRET
-        }
-      }
-    );
-
-    const pdfLink = pdfRes.data?.url;
-    if (pdfLink) {
-      console.log("✅ PDF link created:", pdfLink);
-      return pdfLink;
-    }
-
-    console.log("❌ PDF response did not contain a link.");
+    console.log("❌ carfax_link missing from response");
     return null;
 
   } catch (err) {
-    console.error("❌ Error converting to PDF:", err.message);
+    console.error("❌ Error fetching report link:", err.message);
     return null;
   }
 }
