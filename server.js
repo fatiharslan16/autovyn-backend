@@ -11,13 +11,14 @@ const API_KEY = process.env.REPORT_PROVIDER_API;
 const API_SECRET = process.env.REPORT_PROVIDER_SECRET;
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// ✅ CORS
 app.use(cors({
     origin: ["https://autovyn.net", "https://www.autovyn.net"],
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"]
 }));
 
-// Stripe Webhook
+// ✅ Stripe Webhook
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
     const sig = req.headers['stripe-signature'];
     let event;
@@ -43,10 +44,11 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                 to: customerEmail,
                 subject: `Your Autovyn Report for ${vehicleInfo} (VIN: ${vin})`,
                 html: `<p>Thank you for your purchase!</p>
-                       <p>Your vehicle report has been sent to this email. No further action is needed.</p>`
+                       <p>Your report will be ready soon. You can download it here:</p>
+                       <p><a href="https://autovyn-backend.onrender.com/report/${vin}?email=${customerEmail}" target="_blank">Download/View Your Report</a></p>`
             });
 
-            console.log(`Report confirmation email sent to ${customerEmail}`);
+            console.log(`Report link email sent to ${customerEmail}`);
         } catch (error) {
             console.error('Error sending email:', error.message);
         }
@@ -55,12 +57,15 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     res.status(200).send('Webhook received');
 });
 
+// ✅ Enable JSON after webhook
 app.use(express.json());
 
+// ✅ Home route
 app.get('/', (req, res) => {
     res.send('Autovyn backend is running.');
 });
 
+// ✅ VIN lookup
 app.get('/vehicle-info/:vin', async (req, res) => {
     const vin = req.params.vin;
     console.log("Received VIN request:", vin);
@@ -86,6 +91,7 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     }
 });
 
+// ✅ Report route (no email sending here)
 app.get('/report/:vin', async (req, res) => {
     const vin = req.params.vin;
 
@@ -125,6 +131,7 @@ app.get('/report/:vin', async (req, res) => {
     }
 });
 
+// ✅ Stripe Checkout
 app.post('/create-checkout-session', async (req, res) => {
     const { vin, email, vehicle } = req.body;
 
@@ -154,6 +161,7 @@ app.post('/create-checkout-session', async (req, res) => {
     }
 });
 
+// ✅ Customer Contact Form
 app.post('/contact', async (req, res) => {
     const { name, email, vin, message } = req.body;
 
