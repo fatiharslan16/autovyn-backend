@@ -1,9 +1,19 @@
-const fs = require('fs');
-const path = require('path');
+const express = require('express');
 const axios = require('axios');
+const cors = require('cors');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { Resend } = require('resend');
+const fs = require('fs');
+const path = require('path');
+
+const app = express(); // ✅ THIS LINE MUST COME BEFORE ANY app.post()
+
+const port = process.env.PORT || 3001;
+
+const API_KEY = process.env.REPORT_PROVIDER_API;
+const API_SECRET = process.env.REPORT_PROVIDER_SECRET;
 const resend = new Resend(process.env.RESEND_API_KEY);
+
 
 // Stripe Webhook
 app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
