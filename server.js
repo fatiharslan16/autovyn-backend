@@ -154,7 +154,6 @@ app.post('/contact', async (req, res) => {
   }
 });
 
-// ✅ Generate report PDF and get link
 async function generateReportPDF(vin, vehicleName) {
   try {
     const recordRes = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
@@ -183,9 +182,12 @@ async function generateReportPDF(vin, vehicleName) {
       }
     });
 
-    console.log("📦 Full PDF API response:", pdfRes.data);
+    // ✅ Safe logging of response
+    console.log("📦 PDF API response keys:", Object.keys(pdfRes.data));
+    console.log("📦 PDF API response preview:", JSON.stringify(pdfRes.data).slice(0, 500));
 
-    const pdfLink = pdfRes.data?.url;
+    const pdfLink = pdfRes.data?.url || pdfRes.data?.pdf_link;
+
     if (pdfLink) {
       console.log("✅ PDF link created:", pdfLink);
       return pdfLink;
