@@ -9,14 +9,14 @@ const fs = require('fs');
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Supabase setup
+// Supabase
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+const BUCKET_NAME = 'autovynreports';
 
 // Config
 const API_KEY = process.env.REPORT_PROVIDER_API;
 const API_SECRET = process.env.REPORT_PROVIDER_SECRET;
 const resend = new Resend(process.env.RESEND_API_KEY);
-const BUCKET_NAME = 'autovynreports';
 
 // ✅ CORS
 app.use(cors({
@@ -46,17 +46,21 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     console.log(`✅ Payment received for VIN: ${vin}, Email: ${customerEmail}`);
 
     try {
-      // 1. Fetch base64 HTML
+      // Step 1: Get base64 HTML from Carfax
       console.log("🔍 Fetching Carfax HTML base64...");
       const carfaxRes = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
-        headers: { "API-KEY": API_KEY, "API-SECRET": API_SECRET }
+        headers: {
+          "API-KEY": API_KEY,
+          "API-SECRET": API_SECRET
+        }
       });
 
       const base64Html = carfaxRes.data;
       console.log("✅ Got base64 HTML. Length:", base64Html.length);
 
-      // 2. Send to /pdf endpoint
+      // Step 2: Convert HTML to PDF (binary)
       console.log("📦 Converting HTML to PDF via Carsimulcast...");
+
       const pdfRes = await axios.post(
         "https://connect.carsimulcast.com/pdf",
         {
@@ -69,43 +73,47 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           headers: {
             "API-KEY": API_KEY,
             "API-SECRET": API_SECRET
-          }
+          },
+          responseType: 'arraybuffer' // Important!
         }
       );
 
-      const base64Pdf = pdfRes.data?.pdf || pdfRes.data;
-      const isBase64 = /^[A-Za-z0-9+/=\r\n]+$/.test(base64Pdf.slice(0, 100));
-      console.log("✅ Received PDF. Is base64 valid?", isBase64);
-      console.log("📏 PDF base64 length:", base64Pdf.length);
+      const pdfBuffer = Buffer.from(pdfRes.data);
+      console.log("✅ Received PDF. Buffer size:", pdfBuffer.length);
 
-      // 3. Convert and save locally for debugging
-      const pdfBuffer = Buffer.from(base64Pdf, 'base64');
+      // Optional: save locally for testing
       const localPath = `./${vin}.pdf`;
       fs.writeFileSync(localPath, pdfBuffer);
       console.log("💾 Saved local test file:", localPath);
 
-      // 4. Upload to Supabase
-      const filename = `${vin}-${Date.now()}.pdf`;
-      console.log("☁️ Uploading PDF to Supabase:", filename);
-      await supabase.storage
+      // Step 3: Upload to Supabase
+      const fileName = `${vin}-${Date.now()}.pdf`;
+      console.log("☁️ Uploading PDF to Supabase:", fileName);
+
+      const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
-        .upload(filename, pdfBuffer, {
+        .upload(fileName, pdfBuffer, {
           contentType: 'application/pdf',
           upsert: false
         });
 
-      const { data } = supabase.storage.from(BUCKET_NAME).getPublicUrl(filename);
+      if (uploadError) {
+        console.error("❌ Supabase upload error:", uploadError.message);
+        return res.status(500).send("Upload failed");
+      }
+
+      const { data } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
       const publicUrl = data.publicUrl;
       console.log("🔗 Public Supabase URL:", publicUrl);
 
-      // 5. Email the link
+      // Step 4: Send email
       await resend.emails.send({
         from: 'Autovyn <autovynsupport@autovyn.net>',
         to: customerEmail,
         subject: `Your Autovyn Report for ${vehicleInfo} (VIN: ${vin})`,
         html: `<p>Thanks for your purchase!</p>
-               <p>Your PDF report is ready:</p>
-               <p><a href="${publicUrl}" target="_blank">Download Report</a></p>`
+               <p>Your report is ready:</p>
+               <p><a href="${publicUrl}" target="_blank">View Report</a></p>`
       });
 
       console.log(`📧 Email sent to: ${customerEmail}`);
@@ -145,6 +153,7 @@ app.get('/vehicle-info/:vin', async (req, res) => {
     } else {
       res.json({ success: false, message: "VIN not found or no vehicle information available." });
     }
+
   } catch (error) {
     res.status(500).json({ success: false, message: 'Error fetching vehicle info.' });
   }
@@ -180,7 +189,7 @@ app.post('/create-checkout-session', async (req, res) => {
   }
 });
 
-// ✅ Customer Contact Form
+// ✅ Contact form
 app.post('/contact', async (req, res) => {
   const { name, email, vin, message } = req.body;
 
