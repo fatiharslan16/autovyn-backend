@@ -55,8 +55,8 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         }
       });
 
-      const base64Html = carfaxResponse.data;
-      const htmlBuffer = Buffer.from(base64Html, 'base64');
+      const base64 = carfaxResponse.data;
+      const fileBuffer = Buffer.from(base64, 'base64');
 
       // Upload to Supabase
       await supabase.storage
