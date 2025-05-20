@@ -61,7 +61,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       // Upload to Supabase
       await supabase.storage
         .from(BUCKET_NAME)
-        .upload(`${vin}.html`, htmlBuffer, {
+        .upload(`${vin}.html`, fileBuffer, {
           contentType: 'text/html',
           upsert: true
         });
