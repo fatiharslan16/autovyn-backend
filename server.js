@@ -4,8 +4,6 @@ const cors = require('cors');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { Resend } = require('resend');
 const { createClient } = require('@supabase/supabase-js');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -44,7 +42,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     const customerEmail = session.metadata.email;
     const vehicleInfo = session.metadata.vehicle;
 
-    console.log(`Payment received. VIN: ${vin}, Email: ${customerEmail}`);
+    console.log(`✅ Payment received. VIN: ${vin}, Email: ${customerEmail}`);
 
     try {
       // Fetch Carfax report
@@ -58,17 +56,23 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
       const base64 = carfaxResponse.data;
       const fileBuffer = Buffer.from(base64, 'base64');
 
-      // Upload to Supabase
-      await supabase.storage
+      // Unique file name with timestamp
+      const filename = `${vin}-${Date.now()}.html`;
+
+      // Upload to Supabase (do NOT overwrite)
+      const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
-        .upload(`${vin}.html`, fileBuffer, {
+        .upload(filename, fileBuffer, {
           contentType: 'text/html',
-          upsert: true
+          upsert: false
         });
 
+      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+
+      // Get public link
       const { data } = supabase.storage
         .from(BUCKET_NAME)
-        .getPublicUrl(`${vin}.html`);
+        .getPublicUrl(filename);
 
       const publicUrl = data.publicUrl;
 
