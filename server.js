@@ -45,7 +45,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     console.log(`✅ Payment received. VIN: ${vin}, Email: ${customerEmail}`);
 
     try {
-      // Fetch Carfax report
+      // 1. Fetch Carfax report (base64 HTML)
       const carfaxResponse = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
         headers: {
           "API-KEY": API_KEY,
@@ -53,42 +53,59 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         }
       });
 
-      const base64 = carfaxResponse.data;
-      const fileBuffer = Buffer.from(base64, 'base64');
+      const base64Html = carfaxResponse.data;
 
-      // Unique file name with timestamp
-      const filename = `${vin}-${Date.now()}.html`;
+      // 2. Convert base64 HTML to PDF via Carsimulcast
+      const pdfResponse = await axios.post(
+        'https://connect.carsimulcast.com/pdf/',
+        {
+          base64_content: base64Html,
+          report_type: "carfax",
+          vin: vin,
+          vehicle_name: vehicleInfo
+        },
+        {
+          headers: {
+            "API-KEY": API_KEY,
+            "API-SECRET": API_SECRET,
+          }
+        }
+      );
 
-      // Upload to Supabase (do NOT overwrite)
+      const pdfBase64 = pdfResponse.data;
+      const pdfBuffer = Buffer.from(pdfBase64, 'base64');
+
+      // 3. Upload PDF to Supabase
+      const filename = `${vin}-${Date.now()}.pdf`;
+
       const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
-        .upload(filename, fileBuffer, {
-          contentType: 'text/html',
+        .upload(filename, pdfBuffer, {
+          contentType: 'application/pdf',
           upsert: false
         });
 
       if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
-      // Get public link
       const { data } = supabase.storage
         .from(BUCKET_NAME)
         .getPublicUrl(filename);
 
       const publicUrl = data.publicUrl;
 
-      // Send email via Resend
+      // 4. Send email with PDF link
       await resend.emails.send({
         from: 'Autovyn <autovynsupport@autovyn.net>',
         to: customerEmail,
-        subject: `Your Autovyn Report for ${vehicleInfo} (VIN: ${vin})`,
+        subject: `Your Autovyn PDF Report for ${vehicleInfo} (VIN: ${vin})`,
         html: `<p>Thanks for your purchase!</p>
-               <p>Your report is ready:</p>
-               <p><a href="${publicUrl}" target="_blank">View Report</a></p>`
+               <p>Your PDF report is ready:</p>
+               <p><a href="${publicUrl}" target="_blank">Download Report</a></p>`
       });
 
-      console.log(`✅ Report uploaded and email sent to ${customerEmail}`);
+      console.log(`✅ PDF uploaded and email sent to ${customerEmail}`);
     } catch (error) {
-      console.error('❌ Error during report processing:', error.message);
+      console.error('❌ Error during PDF processing:', error.message);
     }
   }
 
