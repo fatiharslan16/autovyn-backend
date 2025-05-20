@@ -45,7 +45,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     console.log(`✅ Payment received. VIN: ${vin}, Email: ${customerEmail}`);
 
     try {
-      // 1. Fetch Carfax report (base64 HTML)
+      // 1. Get base64 HTML report
       const carfaxResponse = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
         headers: {
           "API-KEY": API_KEY,
@@ -55,7 +55,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
       const base64Html = carfaxResponse.data;
 
-      // 2. Convert base64 HTML to PDF via Carsimulcast
+      // 2. Convert base64 HTML to PDF via Carsimulcast /pdf API
       const pdfResponse = await axios.post(
         'https://connect.carsimulcast.com/pdf/',
         {
@@ -72,10 +72,10 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         }
       );
 
-      const pdfBase64 = pdfResponse.data;
-      const pdfBuffer = Buffer.from(pdfBase64, 'base64');
+      const pdfBase64 = pdfResponse.data; // base64 string of PDF
+      const pdfBuffer = Buffer.from(pdfBase64, 'base64'); // ✅ decode it
 
-      // 3. Upload PDF to Supabase
+      // 3. Upload to Supabase
       const filename = `${vin}-${Date.now()}.pdf`;
 
       const { error: uploadError } = await supabase.storage
@@ -93,7 +93,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
 
       const publicUrl = data.publicUrl;
 
-      // 4. Send email with PDF link
+      // 4. Email the link
       await resend.emails.send({
         from: 'Autovyn <autovynsupport@autovyn.net>',
         to: customerEmail,
@@ -176,7 +176,7 @@ app.post('/create-checkout-session', async (req, res) => {
   }
 });
 
-// ✅ Customer Contact Form
+// ✅ Contact form
 app.post('/contact', async (req, res) => {
   const { name, email, vin, message } = req.body;
 
