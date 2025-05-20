@@ -4,14 +4,13 @@ const cors = require('cors');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const { Resend } = require('resend');
 const { createClient } = require('@supabase/supabase-js');
+const fs = require('fs');
 
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Supabase setup
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-// Config
 const API_KEY = process.env.REPORT_PROVIDER_API;
 const API_SECRET = process.env.REPORT_PROVIDER_SECRET;
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -32,7 +31,7 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
-    console.log('Webhook verification failed.', err.message);
+    console.log('❌ Webhook verification failed:', err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
@@ -42,21 +41,21 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
     const customerEmail = session.metadata.email;
     const vehicleInfo = session.metadata.vehicle;
 
-    console.log(`✅ Payment received. VIN: ${vin}, Email: ${customerEmail}`);
+    console.log(`✅ Payment received for VIN: ${vin}, Email: ${customerEmail}`);
 
     try {
-      // 1. Get base64 HTML report
-      const carfaxResponse = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
-        headers: {
-          "API-KEY": API_KEY,
-          "API-SECRET": API_SECRET
-        }
+      // 1. Get base64 HTML
+      console.log('🔍 Fetching Carfax HTML base64...');
+      const carfaxRes = await axios.get(`https://connect.carsimulcast.com/getrecord/carfax/${vin}`, {
+        headers: { "API-KEY": API_KEY, "API-SECRET": API_SECRET }
       });
 
-      const base64Html = carfaxResponse.data;
+      const base64Html = carfaxRes.data;
+      console.log('✅ Got base64 HTML. Length:', base64Html.length);
 
-      // 2. Convert base64 HTML to PDF via Carsimulcast /pdf API
-      const pdfResponse = await axios.post(
+      // 2. Convert to PDF
+      console.log('📦 Converting HTML to PDF via Carsimulcast...');
+      const pdfRes = await axios.post(
         'https://connect.carsimulcast.com/pdf/',
         {
           base64_content: base64Html,
@@ -67,16 +66,26 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         {
           headers: {
             "API-KEY": API_KEY,
-            "API-SECRET": API_SECRET,
+            "API-SECRET": API_SECRET
           }
         }
       );
 
-      const pdfBase64 = pdfResponse.data; // base64 string of PDF
-      const pdfBuffer = Buffer.from(pdfBase64, 'base64'); // ✅ decode it
+      const base64Pdf = pdfRes.data;
+      const isBase64 = /^[A-Za-z0-9+/=\n\r]+$/.test(base64Pdf.slice(0, 100));
+      console.log('✅ Received PDF. Is base64 valid?', isBase64);
+      console.log('📏 PDF base64 length:', base64Pdf.length);
+
+      const pdfBuffer = Buffer.from(base64Pdf, 'base64');
+
+      // Optional: Save locally to test
+      const localPath = `./${vin}.pdf`;
+      fs.writeFileSync(localPath, pdfBuffer);
+      console.log(`💾 Saved local test file: ${localPath}`);
 
       // 3. Upload to Supabase
       const filename = `${vin}-${Date.now()}.pdf`;
+      console.log('☁️ Uploading PDF to Supabase:', filename);
 
       const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
@@ -85,15 +94,16 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
           upsert: false
         });
 
-      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+      if (uploadError) throw new Error('📤 Supabase upload error: ' + uploadError.message);
 
       const { data } = supabase.storage
         .from(BUCKET_NAME)
         .getPublicUrl(filename);
 
-      const publicUrl = data.publicUrl;
+      const publicUrl = data?.publicUrl;
+      console.log('🔗 Public Supabase URL:', publicUrl);
 
-      // 4. Email the link
+      // 4. Send Email
       await resend.emails.send({
         from: 'Autovyn <autovynsupport@autovyn.net>',
         to: customerEmail,
@@ -103,50 +113,40 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
                <p><a href="${publicUrl}" target="_blank">Download Report</a></p>`
       });
 
-      console.log(`✅ PDF uploaded and email sent to ${customerEmail}`);
-    } catch (error) {
-      console.error('❌ Error during PDF processing:', error.message);
+      console.log('📧 Email sent to:', customerEmail);
+    } catch (err) {
+      console.error('❌ Error during processing:', err.message);
     }
   }
 
   res.status(200).send('Webhook received');
 });
 
-// ✅ Enable JSON after webhook
+// ✅ Enable JSON
 app.use(express.json());
 
-// ✅ Home route
-app.get('/', (req, res) => {
-  res.send('Autovyn backend is running.');
-});
-
-// ✅ VIN lookup
+// ✅ VIN Lookup
 app.get('/vehicle-info/:vin', async (req, res) => {
   const vin = req.params.vin;
-  console.log("Received VIN request:", vin);
+  console.log("🔍 VIN Lookup:", vin);
 
   try {
     const response = await axios.get(`https://connect.carsimulcast.com/checkrecords/${vin}`, {
-      headers: {
-        "API-KEY": API_KEY,
-        "API-SECRET": API_SECRET,
-      },
+      headers: { "API-KEY": API_KEY, "API-SECRET": API_SECRET },
     });
 
     const data = response.data;
-
-    if (data && data.vehicle) {
+    if (data?.vehicle) {
       res.json({ success: true, vin, vehicle: data.vehicle });
     } else {
-      res.json({ success: false, message: "VIN not found or no vehicle information available." });
+      res.json({ success: false, message: "No vehicle found." });
     }
-
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Error fetching vehicle info.' });
+    res.status(500).json({ success: false, message: 'API error' });
   }
 });
 
-// ✅ Stripe Checkout session
+// ✅ Stripe Checkout
 app.post('/create-checkout-session', async (req, res) => {
   const { vin, email, vehicle } = req.body;
 
@@ -176,7 +176,7 @@ app.post('/create-checkout-session', async (req, res) => {
   }
 });
 
-// ✅ Contact form
+// ✅ Contact
 app.post('/contact', async (req, res) => {
   const { name, email, vin, message } = req.body;
 
@@ -195,11 +195,11 @@ app.post('/contact', async (req, res) => {
 
     res.json({ success: true });
   } catch (err) {
-    console.error('Error sending contact form:', err);
-    res.status(500).json({ success: false, message: 'Failed to send message' });
+    console.error('Contact form error:', err);
+    res.status(500).json({ success: false, message: 'Failed to send' });
   }
 });
 
 app.listen(port, () => {
-  console.log(`🚀 Server running on port ${port}`);
+  console.log(`🚀 Autovyn backend running on port ${port}`);
 });
