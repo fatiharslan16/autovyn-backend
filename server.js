@@ -173,17 +173,20 @@ app.get('/plate-to-vin/:state/:plate', async (req, res) => {
       },
     });
 
-    console.log("📦 Raw API Response:", response.data); // <== ADD THIS
+    console.log("📦 Raw API Response:", response.data);
 
-    if (response.data && response.data.vin) {
-      res.json({ success: true, vin: response.data.vin });
+    // Handle raw VIN string response
+    const vin = typeof response.data === 'string' ? response.data.trim() : null;
+
+    if (vin && vin.length === 17) {
+      res.json({ success: true, vin });
     } else {
-      res.json({ success: false, message: "No VIN found for this plate/state." });
+      res.json({ success: false, message: "No VIN found or invalid response format." });
     }
   } catch (error) {
     console.error("❌ Plate lookup failed:", error.message);
     if (error.response) {
-      console.error("📛 API Error Response:", error.response.data); // <== ADD THIS
+      console.error("📛 API Error Response:", error.response.data);
     }
     res.status(500).json({ success: false, message: "Server error during plate lookup." });
   }
