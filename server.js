@@ -162,6 +162,8 @@ app.get('/vehicle-info/:vin', async (req, res) => {
 app.get('/plate-to-vin/:state/:plate', async (req, res) => {
   const { state, plate } = req.params;
   console.log(`🔍 Plate Lookup: ${state}/${plate}`);
+  console.log("🛠 API_KEY present?", !!API_KEY);
+  console.log("🛠 API_SECRET present?", !!API_SECRET);
 
   try {
     const response = await axios.get(`https://connect.carsimulcast.com/checkplate/${state}/${plate}`, {
@@ -171,6 +173,8 @@ app.get('/plate-to-vin/:state/:plate', async (req, res) => {
       },
     });
 
+    console.log("📦 Raw API Response:", response.data); // <== ADD THIS
+
     if (response.data && response.data.vin) {
       res.json({ success: true, vin: response.data.vin });
     } else {
@@ -178,6 +182,9 @@ app.get('/plate-to-vin/:state/:plate', async (req, res) => {
     }
   } catch (error) {
     console.error("❌ Plate lookup failed:", error.message);
+    if (error.response) {
+      console.error("📛 API Error Response:", error.response.data); // <== ADD THIS
+    }
     res.status(500).json({ success: false, message: "Server error during plate lookup." });
   }
 });
