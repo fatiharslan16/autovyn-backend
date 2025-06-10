@@ -159,7 +159,30 @@ app.get('/vehicle-info/:vin', async (req, res) => {
   }
 });
 
-// ✅ Stripe Checkout session
+app.get('/plate-to-vin/:state/:plate', async (req, res) => {
+  const { state, plate } = req.params;
+  console.log(`🔍 Plate Lookup: ${state}/${plate}`);
+
+  try {
+    const response = await axios.get(`https://connect.carsimulcast.com/checkplate/${state}/${plate}`, {
+      headers: {
+        "API-KEY": API_KEY,
+        "API-SECRET": API_SECRET,
+      },
+    });
+
+    if (response.data && response.data.vin) {
+      res.json({ success: true, vin: response.data.vin });
+    } else {
+      res.json({ success: false, message: "No VIN found for this plate/state." });
+    }
+  } catch (error) {
+    console.error("❌ Plate lookup failed:", error.message);
+    res.status(500).json({ success: false, message: "Server error during plate lookup." });
+  }
+});
+
+// Stripe Checkout session
 app.post('/create-checkout-session', async (req, res) => {
   const { vin, email, vehicle } = req.body;
 
