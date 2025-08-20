@@ -113,7 +113,9 @@ app.post('/webhook', express.raw({ type: 'application/json' }), async (req, res)
         subject: `Your Autovyn Report for ${vehicleInfo} (VIN: ${vin})`,
         html: `<p>Thanks for your purchase!</p>
                <p>Your report is ready:</p>
-               <p><a href="${publicUrl}" target="_blank">View Report</a></p>`
+               <p><a href="${publicUrl}" target="_blank">View Report</a></p>
+               <p>If something doesn’t look right with your purchase, just reply to this email or reach out through the 
+               <a href="https://autovyn.net" target="_blank">Contact Us</a> form on AUTOVYN.net.</p>`
       });
 
       console.log(`📧 Email sent to: ${customerEmail}`);
@@ -249,3 +251,4 @@ app.post('/contact', async (req, res) => {
 app.listen(port, () => {
   console.log(`🚀 Autovyn backend running on port ${port}`);
 });
+
